@@ -125,6 +125,7 @@ export interface ClinicService {
 export interface Appointment {
   id: string;
   patient_id: string;
+  patient_name?: string;
   professional_id: string;
   service_id: string;
   date_time: string;

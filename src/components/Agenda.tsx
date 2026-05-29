@@ -133,7 +133,7 @@ const Agenda: React.FC<Props> = ({
 
       const { data, error } = await supabase
         .from('appointments')
-        .select('*')
+        .select('*, patients(name)')
         .gte('date_time', fromISO)
         .lte('date_time', toISO + 'T23:59:59')
         .order('date_time', { ascending: true })
@@ -143,6 +143,7 @@ const Agenda: React.FC<Props> = ({
         (data || []).map((a: any): Appointment => ({
           id:               String(a.id),
           patient_id:       String(a.patient_id),
+          patient_name:     a.patients?.name || '',
           professional_id:  a.professional_id ? String(a.professional_id) : '',
           service_id:       a.service_id       ? String(a.service_id)       : '',
           date_time:        a.date_time || '',
@@ -478,6 +479,60 @@ const Agenda: React.FC<Props> = ({
     document.addEventListener('mouseup', handleUp);
   };
 
+  // ─── Calcula colunas para agendamentos sobrepostos ──────────────────────────
+  const computeColumns = (apts: Appointment[]): Map<string, { col: number; total: number }> => {
+    const result = new Map<string, { col: number; total: number }>();
+    const toMin = (apt: Appointment) => {
+      const p = parseAptDate(apt.date_time);
+      return p.hours * 60 + p.minutes;
+    };
+    const endMin = (apt: Appointment) => toMin(apt) + (apt.duration_minutes || 60);
+
+    // Ordena por horário de início
+    const sorted = [...apts].sort((a, b) => toMin(a) - toMin(b));
+
+    // Grupos de sobreposição
+    const groups: Appointment[][] = [];
+    for (const apt of sorted) {
+      let placed = false;
+      for (const group of groups) {
+        if (group.some(g => toMin(apt) < endMin(g) && endMin(apt) > toMin(g))) {
+          group.push(apt);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) groups.push([apt]);
+    }
+
+    for (const group of groups) {
+      // Atribui colunas dentro do grupo (greedy)
+      const cols: Appointment[][] = [];
+      for (const apt of group) {
+        let assigned = false;
+        for (let c = 0; c < cols.length; c++) {
+          if (!cols[c].some(g => toMin(apt) < endMin(g) && endMin(apt) > toMin(g))) {
+            cols[c].push(apt);
+            result.set(apt.id, { col: c, total: 0 }); // total preenchido depois
+            assigned = true;
+            break;
+          }
+        }
+        if (!assigned) {
+          result.set(apt.id, { col: cols.length, total: 0 });
+          cols.push([apt]);
+        }
+      }
+      // Preenche total com número de colunas do grupo
+      const total = cols.length;
+      for (const apt of group) {
+        const entry = result.get(apt.id);
+        if (entry) entry.total = total;
+      }
+    }
+    return result;
+  };
+
   // ─────────────────────────── AptCard ─────────────────────────────────────
   // Defined as a render function (not JSX component) to avoid remount issues.
   const renderCard = (
@@ -486,10 +541,12 @@ const Agenda: React.FC<Props> = ({
     heightPx: number,
     scale = 1,
     weekDays?: Date[],
+    colIndex = 0,
+    totalCols = 1,
   ) => {
     const service  = services.find(s => s.id === apt.service_id);
     const prof     = professionals.find(p => p.id === apt.professional_id);
-    const patName  = patients.find(p => p.id === apt.patient_id)?.name || 'Paciente';
+    const patName  = (apt as any).patient_name || patients.find(p => p.id === apt.patient_id)?.name || 'Paciente';
     const colors   = getProfColor(prof?.color || 'blue');
 
     // Compute time range string "HH:MM – HH:MM"
@@ -513,7 +570,9 @@ const Agenda: React.FC<Props> = ({
           key={apt.id}
           style={{
             position: 'absolute',
-            top: topPx + 2, left: scale > 1 ? 12 : 3, right: scale > 1 ? 12 : 3,
+            top: topPx + 2,
+            left: `calc(${(colIndex / totalCols) * 100}% + ${scale > 1 ? 12 : 3}px)`,
+            width: `calc(${(1 / totalCols) * 100}% - ${scale > 1 ? 24 : 6}px)`,
             height: Math.max(28, heightPx - 4),
             background: colors.bg,
             borderLeft: `${scale > 1 ? '4px' : '3px'} solid ${colors.border}`,
@@ -531,7 +590,9 @@ const Agenda: React.FC<Props> = ({
         key={apt.id}
         style={{
           position: 'absolute',
-          top: previewTop + 2, left: scale > 1 ? 12 : 3, right: scale > 1 ? 12 : 3,
+          top: previewTop + 2,
+          left: `calc(${(colIndex / totalCols) * 100}% + ${scale > 1 ? 12 : 3}px)`,
+          width: `calc(${(1 / totalCols) * 100}% - ${scale > 1 ? 24 : 6}px)`,
           height: Math.max(28, previewH - 4),
           background:  colors.bg,
           borderLeft:  `${scale > 1 ? '4px' : '3px'} solid ${colors.border}`,
@@ -604,7 +665,7 @@ const Agenda: React.FC<Props> = ({
 
     const prof    = professionals.find(p => p.id === apt.professional_id);
     const colors  = getProfColor(prof?.color || 'blue');
-    const patName = patients.find(p => p.id === apt.patient_id)?.name || 'Paciente';
+    const patName = (apt as any).patient_name || patients.find(p => p.id === apt.patient_id)?.name || 'Paciente';
 
     return (
       <div
@@ -751,17 +812,23 @@ const Agenda: React.FC<Props> = ({
 
                   {isToday && <TimeLine />}
 
-                  {dayApts.map(apt => {
-                    const parsed  = parseAptDate(apt.date_time);
-                    const service = services.find(s => s.id === apt.service_id);
-                    return renderCard(
-                      apt,
-                      getTopOffset(parsed.hours, parsed.minutes),
-                      (apt.duration_minutes || service?.duration || 60) * (HOUR_HEIGHT / 60),
-                      1,
-                      weekDays,
-                    );
-                  })}
+                  {(() => {
+                    const colMap = computeColumns(dayApts);
+                    return dayApts.map(apt => {
+                      const parsed  = parseAptDate(apt.date_time);
+                      const service = services.find(s => s.id === apt.service_id);
+                      const { col, total } = colMap.get(apt.id) || { col: 0, total: 1 };
+                      return renderCard(
+                        apt,
+                        getTopOffset(parsed.hours, parsed.minutes),
+                        (apt.duration_minutes || service?.duration || 60) * (HOUR_HEIGHT / 60),
+                        1,
+                        weekDays,
+                        col,
+                        total,
+                      );
+                    });
+                  })()}
 
                   {/* Ghost on target column when dragging to a different day */}
                   {renderDragGhost(ds, 1)}
@@ -818,16 +885,23 @@ const Agenda: React.FC<Props> = ({
                 </div>
               ))}
               {isToday && <TimeLine scale={SCALE} />}
-              {dayApts.map(apt => {
-                const parsed  = parseAptDate(apt.date_time);
-                const service = services.find(s => s.id === apt.service_id);
-                return renderCard(
-                  apt,
-                  getTopOffset(parsed.hours, parsed.minutes) * SCALE,
-                  (apt.duration_minutes || service?.duration || 60) * (HOUR_HEIGHT / 60) * SCALE,
-                  SCALE,
-                );
-              })}
+              {(() => {
+                const colMap = computeColumns(dayApts);
+                return dayApts.map(apt => {
+                  const parsed  = parseAptDate(apt.date_time);
+                  const service = services.find(s => s.id === apt.service_id);
+                  const { col, total } = colMap.get(apt.id) || { col: 0, total: 1 };
+                  return renderCard(
+                    apt,
+                    getTopOffset(parsed.hours, parsed.minutes) * SCALE,
+                    (apt.duration_minutes || service?.duration || 60) * (HOUR_HEIGHT / 60) * SCALE,
+                    SCALE,
+                    undefined,
+                    col,
+                    total,
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
@@ -873,7 +947,7 @@ const Agenda: React.FC<Props> = ({
                         {dayApts.slice(0, 3).map(apt => {
                           const prof    = professionals.find(p => p.id === apt.professional_id);
                           const colors  = getProfColor(prof?.color || 'blue');
-                          const patName = patients.find(p => p.id === apt.patient_id)?.name || 'Paciente';
+                          const patName = (apt as any).patient_name || patients.find(p => p.id === apt.patient_id)?.name || 'Paciente';
                           return (
                             <div key={apt.id}
                               onClick={e => { e.stopPropagation(); openEdit(apt); }}
