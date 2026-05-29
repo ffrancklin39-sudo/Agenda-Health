@@ -97,7 +97,7 @@ const STATUS_OPTIONS = [
 // ─────────────────────────────────────────────────────────────────────────────
 const Agenda: React.FC<Props> = ({
   patients, professionals, services,
-  onSelectPatient,
+  onSelectPatient, onRefresh,
 }) => {
   const [view, setView]               = useState<ViewType>('semanal');
   const [selectedProf, setSelectedProf] = useState('all');
@@ -331,6 +331,7 @@ const Agenda: React.FC<Props> = ({
         .single();
       if (patErr || !newPat) { setToast({ type: 'error', msg: 'Erro ao criar paciente.' }); setSaving(false); return; }
       patientId = String(newPat.id);
+      onRefresh(); // atualiza lista de pacientes no App
     }
     if (!formDate || !formTime) { setToast({ type: 'error', msg: 'Informe data e horário.' }); return; }
     setSaving(true);
