@@ -320,13 +320,25 @@ const Agenda: React.FC<Props> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selPatient)            { setToast({ type: 'error', msg: 'Selecione um paciente.' }); return; }
+
+    // Se for paciente novo, cria no banco antes de agendar
+    let patientId = selPatient.id;
+    if (selPatient.id === 'NEW_FROM_AGENDA') {
+      const { data: newPat, error: patErr } = await supabase
+        .from('patients')
+        .insert([{ name: selPatient.name, status: 'scheduled' }])
+        .select('id')
+        .single();
+      if (patErr || !newPat) { setToast({ type: 'error', msg: 'Erro ao criar paciente.' }); setSaving(false); return; }
+      patientId = String(newPat.id);
+    }
     if (!formDate || !formTime) { setToast({ type: 'error', msg: 'Informe data e horário.' }); return; }
     setSaving(true);
     try {
       const [dh, dm] = formDuration.split(':').map(Number);
       const dur = (dh || 0) * 60 + (dm || 0) || 60;
       const newApt: Record<string, any> = {
-        patient_id:       selPatient.id,
+        patient_id:       patientId,
         date_time:        `${formDate}T${formTime}:00`,
         duration_minutes: dur,
         status:           'scheduled',
@@ -336,7 +348,7 @@ const Agenda: React.FC<Props> = ({
       const { error } = await supabase.from('appointments').insert(newApt);
       if (error) throw error;
       // Atualiza status do paciente para 'scheduled' no CRM
-      await supabase.from('patients').update({ status: 'scheduled' }).eq('id', selPatient.id);
+      await supabase.from('patients').update({ status: 'scheduled' }).eq('id', patientId);
       await fetchAppointments();
       setShowQuickAdd(false);
       setToast({ type: 'success', msg: `Agendamento de ${selPatient.name} salvo!` });
@@ -1130,6 +1142,22 @@ const Agenda: React.FC<Props> = ({
                       </button>
                     )}
                   </div>
+                  {/* Botão fixo quando há texto mas sem paciente selecionado */}
+                  {!selPatient && patientQuery.trim().length >= 2 && !showDrop && (
+                    <button type="button"
+                      onClick={() => {
+                        setSelPatient({ id: 'NEW_FROM_AGENDA', name: patientQuery.trim(), email: '', phone: '', status: 'lead' } as any);
+                        setShowDrop(false);
+                      }}
+                      className="absolute z-20 left-0 right-0 top-full mt-1 w-full flex items-center gap-3 px-4 py-3 bg-white border border-emerald-200 rounded-2xl shadow-lg hover:bg-emerald-50 transition-colors text-left">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-sm shrink-0">+</div>
+                      <div>
+                        <p className="text-sm font-bold text-emerald-700">Criar "{patientQuery.trim()}"</p>
+                        <p className="text-[10px] text-slate-400 font-semibold">Novo paciente — salvo ao confirmar</p>
+                      </div>
+                    </button>
+                  )}
+
                   {showDrop && !selPatient && patientQuery.trim().length >= 1 && (
                     <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-2xl overflow-hidden">
                       {patientSuggestions.length > 0
@@ -1144,7 +1172,21 @@ const Agenda: React.FC<Props> = ({
                               </div>
                             </button>
                           ))
-                        : <div className="px-4 py-4 text-center"><p className="text-xs font-bold text-slate-400">Nenhum paciente encontrado</p></div>
+                        : (
+                          <button type="button"
+                            onMouseDown={() => {
+                              // Cria paciente temporário "novo" com o nome digitado
+                              setSelPatient({ id: 'NEW_FROM_AGENDA', name: patientQuery.trim(), email: '', phone: '', status: 'lead' } as any);
+                              setShowDrop(false);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50 transition-colors text-left">
+                            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-sm shrink-0">+</div>
+                            <div>
+                              <p className="text-sm font-bold text-emerald-700">Criar "{patientQuery.trim()}"</p>
+                              <p className="text-[10px] text-slate-400 font-semibold">Novo paciente — salvo ao agendar</p>
+                            </div>
+                          </button>
+                        )
                       }
                     </div>
                   )}
@@ -1184,7 +1226,7 @@ const Agenda: React.FC<Props> = ({
                     </p>
                   );
                 })()}
-                <button type="submit" disabled={saving || !selPatient}
+                <button type="submit" disabled={saving || !selPatient || !selPatient.name.trim()}
                   className="w-full premium-button bg-indigo-600 text-white shadow-lg shadow-indigo-900/20 hover:bg-indigo-700 mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
                   {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : <><Check size={18} /> Confirmar Agendamento</>}
                 </button>
