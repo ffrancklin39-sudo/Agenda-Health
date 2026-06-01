@@ -57,8 +57,8 @@ const AvatarUpload: React.FC<Props> = ({
       <div className="relative group cursor-pointer" onClick={() => !uploading && inputRef.current?.click()}>
         {/* Avatar */}
         <div
-          className={`${SIZE[size]} rounded-full overflow-hidden flex items-center justify-center font-bold text-white ring-2 ring-offset-2 transition-all group-hover:ring-4`}
-          style={{ background: color, ringColor: color }}
+          className={`${SIZE[size]} rounded-full overflow-hidden flex items-center justify-center font-bold text-white transition-all`}
+          style={{ background: color, outline: `2px solid ${color}`, outlineOffset: '2px' }}
         >
           {preview
             ? <img src={preview} alt={name} className="w-full h-full object-cover" />

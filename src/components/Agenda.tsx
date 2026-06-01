@@ -1071,7 +1071,7 @@ const Agenda: React.FC<Props> = ({
                   {/* Avatar circular com foto ou iniciais */}
                   <div
                     className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-white text-[10px] font-bold shrink-0 ring-2 ring-offset-1"
-                    style={{ background: c.border, ringColor: c.border }}
+                    style={{ background: c.border, outline: `2px solid ${c.border}`, outlineOffset: '1px' }}
                   >
                     {(prof as any).photo_url
                       ? <img src={(prof as any).photo_url} alt={prof.name} className="w-full h-full object-cover" />
