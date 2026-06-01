@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Patient, Professional, ClinicService, Appointment } from '../types';
 import { supabase } from '../services/supabaseClient';
+import { toTitleCase } from '../phoneUtils';
 
 interface Props {
   patients: Patient[];
@@ -12,6 +13,7 @@ interface Props {
   services: ClinicService[];
   onSelectPatient: (id: string) => void;
   onRefresh: () => void;
+  refreshTrigger?: number;
 }
 
 type ViewType = 'diario' | 'semanal' | 'mensal';
@@ -97,7 +99,7 @@ const STATUS_OPTIONS = [
 // ─────────────────────────────────────────────────────────────────────────────
 const Agenda: React.FC<Props> = ({
   patients, professionals, services,
-  onSelectPatient, onRefresh,
+  onSelectPatient, onRefresh, refreshTrigger,
 }) => {
   const [view, setView]               = useState<ViewType>('semanal');
   const [selectedProf, setSelectedProf] = useState('all');
@@ -118,6 +120,7 @@ const Agenda: React.FC<Props> = ({
   const [patientQuery, setPatientQuery]   = useState('');
   const [selPatient, setSelPatient]       = useState<Patient | null>(null);
   const [showDrop, setShowDrop]           = useState(false);
+  const [newPatPhone, setNewPatPhone]     = useState('');
 
   // ── Appointments (próprio state — não usa patients como fonte) ──
   const [appointments, setAppointments]   = useState<Appointment[]>([]);
@@ -159,13 +162,23 @@ const Agenda: React.FC<Props> = ({
     }
   };
 
+  // Refresh externo (ex: paciente deletado pelo PatientProfile)
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) fetchAppointments();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTrigger]);
+
   // Busca inicial + realtime
   useEffect(() => {
     fetchAppointments();
 
     const channel = supabase
-      .channel('appointments-realtime')
+      .channel('agenda-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+        fetchAppointments();
+      })
+      // Quando um paciente é deletado, recarrega agenda para remover cards órfãos
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'patients' }, () => {
         fetchAppointments();
       })
       .subscribe();
@@ -324,14 +337,33 @@ const Agenda: React.FC<Props> = ({
     // Se for paciente novo, cria no banco antes de agendar
     let patientId = selPatient.id;
     if (selPatient.id === 'NEW_FROM_AGENDA') {
+      // Gera proximo numero de prontuario sequencial
+      // Busca todos os record_numbers numericos e pega o maior
+      const { data: maxData } = await supabase
+        .from('patients')
+        .select('record_number')
+        .not('record_number', 'is', null);
+      let nextNum = 1;
+      if (maxData && maxData.length > 0) {
+        const nums = maxData
+          .map((p: any) => parseInt(p.record_number, 10))
+          .filter((n: number) => !isNaN(n) && n > 0);
+        if (nums.length > 0) nextNum = Math.max(...nums) + 1;
+      }
+      const record_number = String(nextNum);
+
       const { data: newPat, error: patErr } = await supabase
         .from('patients')
-        .insert([{ name: selPatient.name, status: 'scheduled' }])
+        .insert([{
+          name: toTitleCase(selPatient.name),
+          phone: newPatPhone.trim() || null,
+          record_number,
+          status: 'scheduled',
+        }])
         .select('id')
         .single();
       if (patErr || !newPat) { setToast({ type: 'error', msg: 'Erro ao criar paciente.' }); setSaving(false); return; }
       patientId = String(newPat.id);
-      onRefresh(); // atualiza lista de pacientes no App
     }
     if (!formDate || !formTime) { setToast({ type: 'error', msg: 'Informe data e horário.' }); return; }
     setSaving(true);
@@ -352,7 +384,9 @@ const Agenda: React.FC<Props> = ({
       await supabase.from('patients').update({ status: 'scheduled' }).eq('id', patientId);
       await fetchAppointments();
       setShowQuickAdd(false);
+      setNewPatPhone('');
       setToast({ type: 'success', msg: `Agendamento de ${selPatient.name} salvo!` });
+      onRefresh();
     } catch (err: any) {
       setToast({ type: 'error', msg: `Erro ao salvar: ${err?.message}` });
     } finally {
@@ -648,9 +682,21 @@ const Agenda: React.FC<Props> = ({
         </p>
 
         {previewH > (scale > 1 ? 44 : 38) && (
-          <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate mt-0.5`}>
-            {service?.name || 'Consulta'}{scale > 1 && prof ? ` · ${prof.name}` : ''}
-          </p>
+          <div className={`flex items-center gap-1.5 mt-0.5`}>
+            {/* Avatar circular do profissional */}
+            <div
+              className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center text-white flex-shrink-0"
+              style={{ background: colors.border, fontSize: '7px', fontWeight: 700 }}
+            >
+              {(prof as any)?.photo_url
+                ? <img src={(prof as any).photo_url} alt={prof?.name} className="w-full h-full object-cover" />
+                : (prof?.name?.slice(0, 2) || '?').toUpperCase()
+              }
+            </div>
+            <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate`}>
+              {service?.name || 'Consulta'}{scale > 1 && prof ? ` · ${prof.name}` : ''}
+            </p>
+          </div>
         )}
 
         {/* Resize handle (bottom edge) */}
@@ -996,9 +1042,10 @@ const Agenda: React.FC<Props> = ({
       <div className="w-52 shrink-0 bg-slate-50 border-r border-slate-100 flex flex-col gap-4 p-3.5 overflow-y-auto custom-scrollbar">
         <button
           onClick={() => openAdd(toDateStr(currentDate))}
-          className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white rounded-2xl py-3 text-[11px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-900/15 active:scale-95"
+          className="w-full flex items-center justify-center gap-1.5 bg-indigo-600 text-white rounded-xl py-2.5 px-3 text-xs font-semibold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-900/10 active:scale-95"
         >
-          <Plus className="w-4 h-4" /> Novo Agendamento
+          <Plus className="w-3.5 h-3.5 shrink-0" />
+          <span>Novo Agendamento</span>
         </button>
 
         <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
@@ -1009,15 +1056,28 @@ const Agenda: React.FC<Props> = ({
           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Profissionais</p>
           <div className="space-y-0.5">
             <button onClick={() => setSelectedProf('all')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all ${selectedProf === 'all' ? 'bg-white border border-slate-200 text-slate-800 shadow-sm' : 'text-slate-500 hover:bg-white/60'}`}>
-              <div className="w-2.5 h-2.5 rounded-full bg-slate-300 shrink-0" /> Todos
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[11px] font-medium transition-all ${selectedProf === 'all' ? 'bg-white border border-slate-200 text-slate-800 shadow-sm' : 'text-slate-500 hover:bg-white/60'}`}>
+              <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 text-[10px] font-bold shrink-0">
+                Td
+              </div>
+              <span className="truncate">Todos</span>
             </button>
             {professionals.map(prof => {
               const c = getProfColor(prof.color);
+              const initials2 = prof.name.trim().split(/\s+/).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
               return (
                 <button key={prof.id} onClick={() => setSelectedProf(prof.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all ${selectedProf === prof.id ? 'bg-white border border-slate-200 text-slate-800 shadow-sm' : 'text-slate-500 hover:bg-white/60'}`}>
-                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.dot }} />
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[11px] font-medium transition-all ${selectedProf === prof.id ? 'bg-white border border-slate-200 text-slate-800 shadow-sm' : 'text-slate-500 hover:bg-white/60'}`}>
+                  {/* Avatar circular com foto ou iniciais */}
+                  <div
+                    className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-white text-[10px] font-bold shrink-0 ring-2 ring-offset-1"
+                    style={{ background: c.border, ringColor: c.border }}
+                  >
+                    {(prof as any).photo_url
+                      ? <img src={(prof as any).photo_url} alt={prof.name} className="w-full h-full object-cover" />
+                      : initials2
+                    }
+                  </div>
                   <span className="truncate">{prof.name}</span>
                 </button>
               );
@@ -1025,36 +1085,7 @@ const Agenda: React.FC<Props> = ({
           </div>
         </div>
 
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Hoje</p>
-          <div className="space-y-1.5">
-            {[
-              { label: 'Total',       value: todayApts.length, color: 'text-slate-800' },
-              { label: 'Confirmados', value: confirmedCnt,      color: 'text-emerald-600' },
-              { label: 'Pendentes',   value: pendingCnt,        color: 'text-amber-500' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="bg-white rounded-xl px-3 py-2.5 flex items-center justify-between border border-slate-100">
-                <span className="text-[11px] text-slate-500 font-semibold">{label}</span>
-                <span className={`text-sm font-black ${color}`}>{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
 
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Legenda</p>
-          <div className="space-y-1.5">
-            {professionals.map(prof => {
-              const c = getProfColor(prof.color);
-              return (
-                <div key={prof.id} className="flex items-center gap-2 px-1">
-                  <div className="w-3.5 h-3.5 rounded shrink-0" style={{ background: c.bg, borderLeft: `3px solid ${c.border}` }} />
-                  <span className="text-[10px] font-semibold text-slate-500 truncate">{prof.name}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       {/* ── Calendar area ── */}
@@ -1131,6 +1162,7 @@ const Agenda: React.FC<Props> = ({
                     <input type="text" placeholder="Digite o nome do paciente..."
                       value={selPatient ? selPatient.name : patientQuery}
                       onChange={e => { setPatientQuery(e.target.value); setSelPatient(null); setShowDrop(true); }}
+                      onBlur={e => { if (!selPatient) setPatientQuery(toTitleCase(e.target.value)); }}
                       onFocus={() => { if (!selPatient) setShowDrop(true); }}
                       className={`premium-input ${selPatient ? 'bg-indigo-50 text-indigo-700 font-bold' : ''}`}
                       style={{ paddingLeft: '3rem' }}
@@ -1192,6 +1224,22 @@ const Agenda: React.FC<Props> = ({
                     </div>
                   )}
                 </div>
+                {/* Campo telefone — aparece apenas para paciente novo */}
+                {selPatient?.id === 'NEW_FROM_AGENDA' && (
+                  <div className="space-y-1.5 animate-in fade-in duration-200">
+                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                      Telefone / WhatsApp *
+                    </label>
+                    <input
+                      type="tel"
+                      value={newPatPhone}
+                      onChange={e => setNewPatPhone(e.target.value)}
+                      placeholder="(00) 00000-0000"
+                      className="premium-input"
+                    />
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Serviço</label>

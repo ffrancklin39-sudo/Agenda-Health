@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Users, Calendar, Zap, Wallet, Briefcase,
   Settings as SettingsIcon, Kanban as KanbanIcon, ChevronLeft, ChevronRight,
-  UserCheck, TrendingUp,
+  UserCheck, TrendingUp, ListChecks,
 } from 'lucide-react';
 import { UserRole, Patient } from '../types';
 
@@ -29,9 +29,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pa
 
   const menuItems = [
     { id: 'dashboard',   label: 'Dashboard',    icon: LayoutDashboard, roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
+    { id: 'agenda',      label: 'Agenda',        icon: Calendar,        roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
     { id: 'kanban',      label: 'CRMi',          icon: KanbanIcon,      roles: ['ADMIN','RECEPTIONIST'],          ready: true  },
     { id: 'patients',    label: 'Pacientes',     icon: Users,           roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
-    { id: 'agenda',      label: 'Agenda',        icon: Calendar,        roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
+    { id: 'tasks',       label: 'Tarefas',       icon: ListChecks,      roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
     { id: 'automations', label: 'Automacoes',    icon: Zap,             roles: ['ADMIN','DOCTOR'],                ready: false },
     { id: 'services',    label: 'Servicos',      icon: Briefcase,       roles: ['ADMIN','RECEPTIONIST'],          ready: false },
     { id: 'finance',     label: 'Financeiro',    icon: Wallet,          roles: ['ADMIN'],                         ready: true  },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Bell, Loader2, LogOut, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Search, Bell, Loader2, LogOut, AlertCircle, CheckCircle2, ListChecks } from 'lucide-react';
 import { Patient, PatientStatus, UserRole, Professional, ClinicService } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -12,13 +12,18 @@ import Settings from './components/Settings';
 import PatientProfile from './components/PatientProfile';
 import CRMi from './components/CRMi';
 import Login from './components/Login';
+import PasswordReset from './components/PasswordReset';
+import Tasks from './components/Tasks';
 import { supabase } from './services/supabaseClient';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'dashboard'|'kanban'|'patients'|'agenda'|'automations'|'finance'|'services'|'settings'>('dashboard');
+  const [isRecovery, setIsRecovery] = useState(false);
+  const [activeTab, setActiveTab] = useState<'dashboard'|'kanban'|'patients'|'agenda'|'automations'|'finance'|'services'|'settings'|'tasks'>('dashboard');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [agendaRefreshTrigger, setAgendaRefreshTrigger] = useState(0);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -47,7 +52,15 @@ const App: React.FC = () => {
       setSession(session);
       setAuthLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovery(true);
+        setSession(s);
+      } else {
+        setIsRecovery(false);
+        setSession(s);
+      }
+    });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -98,9 +111,22 @@ const App: React.FC = () => {
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('patients').select('*').order('name', { ascending: true });
-      if (error) throw error;
-      setPatients((data || []).map((p: any) => mapPatientRow(p)));
+      // Supabase limita 1000 por query — buscamos em lotes até carregar todos
+      let all: any[] = [];
+      let from = 0;
+      const batch = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('patients')
+          .select('*')
+          .order('name', { ascending: true })
+          .range(from, from + batch - 1);
+        if (error) throw error;
+        all = all.concat(data || []);
+        if (!data || data.length < batch) break;
+        from += batch;
+      }
+      setPatients(all.map((p: any) => mapPatientRow(p)));
     } catch (e) {
       console.error('Erro ao buscar pacientes:', e);
     } finally {
@@ -159,7 +185,22 @@ const App: React.FC = () => {
     return () => { supabase.removeChannel(channel); };
   }, [session]);
 
-  const handlePatientSelect = (id: string) => setSelectedPatientId(id);
+  const handlePatientSelect = async (id: string) => {
+    // Se paciente ja esta no array, abre direto
+    if (id === 'NEW' || patients.find(p => p.id === id)) {
+      setSelectedPatientId(id);
+      return;
+    }
+    // Paciente novo ainda nao chegou via realtime — busca direto do banco
+    const { data } = await supabase.from('patients').select('*').eq('id', id).single();
+    if (data) {
+      setPatients(prev => {
+        if (prev.find(p => p.id === String(data.id))) return prev;
+        return [...prev, mapPatientRow(data)].sort((a, b) => (a.name||'').localeCompare(b.name||'', 'pt-BR'));
+      });
+    }
+    setSelectedPatientId(id);
+  };
 
   // Sem fetchPatients() redundante — realtime cuida das atualizacoes
   const updatePatientStatus = async (id: string, status: PatientStatus) => {
@@ -185,6 +226,9 @@ const App: React.FC = () => {
   );
 
   if (!session) return <Login />;
+
+  // Usuário clicou no link de reset de senha — mostra tela de redefinição
+  if (isRecovery) return <PasswordReset onDone={() => setIsRecovery(false)} />;
 
   const nopad = activeTab === 'agenda' || activeTab === 'patients';
 
@@ -213,6 +257,20 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-4 ml-4">
             {/* Sininho */}
+            {/* Badge de tarefas pendentes */}
+            <button
+              onClick={() => setActiveTab('tasks')}
+              className="relative p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+              title="Tarefas"
+            >
+              <ListChecks size={19} />
+              {pendingTasksCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-indigo-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 shadow">
+                  {pendingTasksCount > 99 ? '99+' : pendingTasksCount}
+                </span>
+              )}
+            </button>
+
             <div className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
@@ -298,11 +356,12 @@ const App: React.FC = () => {
                   {activeTab === 'dashboard'   && <Dashboard patients={patients} dueReminders={dueReminders} />}
                   {activeTab === 'kanban'       && <CRMi onSelectPatient={handlePatientSelect} patients={patients} onRefresh={fetchPatients} onSaveReminder={saveReminder} onUpdatePatient={updatePatient} session={session} />}
                   {activeTab === 'patients'     && <PatientList patients={patients} updateStatus={updatePatientStatus} onSelectPatient={handlePatientSelect} onRefresh={fetchPatients} session={session} initialSearch={globalSearch} />}
-                  {activeTab === 'agenda'       && <Agenda patients={patients} professionals={professionals} services={services} onSelectPatient={handlePatientSelect} onRefresh={fetchPatients} />}
+                  {activeTab === 'agenda'       && <Agenda patients={patients} professionals={professionals} services={services} onSelectPatient={handlePatientSelect} onRefresh={fetchPatients} refreshTrigger={agendaRefreshTrigger} />}
                   {activeTab === 'automations'  && <Automations patients={patients} />}
                   {activeTab === 'finance'      && <Finance userRole={userRole} patients={patients} />}
                   {activeTab === 'services'     && <ServicesCatalog services={services} />}
                   {activeTab === 'settings'     && <Settings professionals={professionals} services={services} onRefreshProfessionals={fetchProfessionals} onRefreshServices={fetchServices} session={session} />}
+                  {activeTab === 'tasks'        && <Tasks professionals={professionals} session={session} onPendingCountChange={setPendingTasksCount} />}
                 </>
               )}
             </div>
@@ -315,6 +374,7 @@ const App: React.FC = () => {
           patient={selectedPatient}
           onClose={() => setSelectedPatientId(null)}
           onRefresh={fetchPatients}
+          onDeleted={() => { setAgendaRefreshTrigger(t => t + 1); setSelectedPatientId(null); }}
         />
       )}
     </div>

@@ -5,11 +5,12 @@ import {
   FileText, FileImage, ChevronDown, ChevronUp,
   Mic, Brain, Stethoscope, Pill, Calendar,
   Image, Clock, Receipt, ChevronLeft, ChevronRight,
-  AlertCircle, ShieldPlus, Activity,
+  AlertCircle, ShieldPlus, Activity, Trash2,
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Patient } from '../types';
-import { phoneMatchKey } from '../phoneUtils';
+import { phoneMatchKey, toTitleCase } from '../phoneUtils';
+import AvatarUpload from './AvatarUpload';
 
 /* -------------------------------------------------
    Tipos auxiliares
@@ -49,6 +50,7 @@ interface Props {
   patient: Patient | any;
   onClose: () => void;
   onRefresh?: () => void;
+  onDeleted?: () => void;
 }
 
 /* -------------------------------------------------
@@ -100,10 +102,12 @@ const Placeholder: React.FC<{ icon: React.ElementType; label: string }> = ({ ico
 /* -------------------------------------------------
    Componente principal
 ------------------------------------------------- */
-const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh }) => {
+const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDeleted }) => {
   const [activeTab, setActiveTab]     = useState<SideTab>('dados');
   const [isSaving,  setIsSaving]      = useState(false);
   const [saveMsg,   setSaveMsg]       = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting]   = useState(false);
   const [clinicalRecords, setClinicalRecords] = useState<ClinicalRecord[]>([]);
   const [patientFiles,    setPatientFiles]    = useState<PatientFile[]>([]);
   const [loadingRecords,  setLoadingRecords]  = useState(false);
@@ -192,8 +196,17 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh }) => {
     }).finally(() => setLoadingRecords(false));
   }, [patient?.id]);
 
-  const ch = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+  const ch = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  };
+
+  // Title Case aplicado apenas ao sair do campo (evita reset de cursor ao digitar)
+  const chBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (name === 'name' || name === 'social_name') {
+      setForm(f => ({ ...f, [name]: toTitleCase(value) }));
+    }
+  };
 
   const imc = (() => {
     const h = parseFloat(String(form.height).replace(',', '.'));
@@ -259,6 +272,25 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh }) => {
     }
   };
 
+  const handleDelete = async () => {
+    if (patient.id === 'NEW') return;
+    setIsDeleting(true);
+    try {
+      // Cancela agendamentos futuros antes de deletar
+      await supabase.from('appointments').delete().eq('patient_id', patient.id);
+      const { error } = await supabase.from('patients').delete().eq('id', patient.id);
+      if (error) throw error;
+      onRefresh?.();
+      onDeleted?.();  // avisa a Agenda para recarregar imediatamente
+      onClose();
+    } catch (err: any) {
+      alert('Erro ao excluir: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   const handleDownload = async (file: PatientFile) => {
     if (!file.storage_path) return;
     const { data, error } = await supabase.storage.from('patient-files').createSignedUrl(file.storage_path, 3600);
@@ -307,8 +339,18 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh }) => {
       {/* TOPBAR */}
       <div className="flex items-center gap-3 px-4 py-2.5 text-white flex-shrink-0" style={{ backgroundColor: '#123451' }}>
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-9 h-9 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-black flex-shrink-0">
-            {initials(form.name)}
+          <div className="flex-shrink-0">
+            <AvatarUpload
+              currentUrl={(form as any).photo_url || null}
+              name={form.name || 'Paciente'}
+              color="#1e3a5f"
+              size="sm"
+              folder="patients"
+              onUpload={url => {
+                (form as any).photo_url = url;
+                supabase.from('patients').update({ photo_url: url }).eq('id', patient.id);
+              }}
+            />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -389,6 +431,41 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh }) => {
               )}
             </button>
           ))}
+
+          {/* Botao deletar — discreto, no final da sidebar, nao aparece para paciente novo */}
+          {patient.id !== 'NEW' && (
+            <div className="mt-auto px-3 pb-3 pt-2 border-t border-slate-200">
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                >
+                  <Trash2 size={12} />
+                  Excluir cadastro
+                </button>
+              ) : (
+                <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5">
+                  <p className="text-[10px] font-bold text-rose-700 mb-2">Confirmar exclusao?</p>
+                  <p className="text-[9px] text-rose-500 mb-2">Remove o paciente e todos os agendamentos.</p>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="flex-1 py-1 text-[10px] font-bold text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleDelete}
+                      disabled={isDeleting}
+                      className="flex-1 py-1 text-[10px] font-bold text-white bg-rose-500 hover:bg-rose-600 rounded transition-colors disabled:opacity-70"
+                    >
+                      {isDeleting ? '...' : 'Excluir'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </aside>
 
         {/* Area de conteudo */}
@@ -418,7 +495,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh }) => {
                 <div className="grid grid-cols-3 gap-x-4 gap-y-4">
                   <div className="col-span-2 space-y-1">
                     <label className={LB}>Nome Completo *</label>
-                    <input name="name" value={form.name} onChange={ch} className={I} placeholder="Nome do paciente" />
+                    <input name="name" value={form.name} onChange={ch} onBlur={chBlur} className={I} placeholder="Nome do paciente" />
                   </div>
                   <div className="space-y-1">
                     <label className={LB}>Prontuario</label>
@@ -426,7 +503,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh }) => {
                   </div>
                   <div className="space-y-1">
                     <label className={LB}>Nome Social</label>
-                    <input name="social_name" value={form.social_name} onChange={ch} className={I} placeholder="Como prefere ser chamado(a)" />
+                    <input name="social_name" value={form.social_name} onChange={ch} onBlur={chBlur} className={I} placeholder="Como prefere ser chamado(a)" />
                   </div>
                   <div className="space-y-1">
                     <label className={LB}>CPF *</label>

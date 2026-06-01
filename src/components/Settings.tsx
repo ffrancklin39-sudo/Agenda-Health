@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import {
-  User, Briefcase, Building2, Shield,
+  User, Briefcase, Building2, Shield, Clock,
   Plus, Pencil, Trash2, Check, X, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { Professional, ClinicService } from '../types';
 import { supabase } from '../services/supabaseClient';
+import AvatarUpload from './AvatarUpload';
 
 type SettingsTab = 'profissionais' | 'servicos' | 'clinica' | 'usuarios';
+type ProfTab = 'dados' | 'horarios';
 type Toast = { type: 'success' | 'error'; msg: string } | null;
+
+const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+const blankSchedule = () => DAYS.map(d => ({ day: d, active: d !== 'Domingo', start: '08:00', end: '18:00' }));
 
 const PROF_COLORS: Record<string, { bg: string; border: string; label: string }> = {
   blue:    { bg: '#dbeafe', border: '#3b82f6', label: 'Azul'   },
@@ -29,7 +34,16 @@ interface Props {
   session: any;
 }
 
-const blankProf = () => ({ name: '', specialty: '', color: 'blue', email: '', phone: '' });
+const TITLES = ['Nenhum', 'Sr.', 'Sra.', 'Dr.', 'Dra.', 'Prof.', 'Profa.'];
+const COUNCILS = ['CRM', 'CRN', 'CRP', 'CRO', 'CREFITO', 'CRF', 'COREN', 'CFN', 'Outro'];
+const UF_LIST = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+
+const blankProf = () => ({
+  title: 'Nenhum', name: '', social_name: '', specialty: '', color: 'blue',
+  email: '', phone: '', phone2: '', gender: '', birth_date: '',
+  cpf: '', cns: '', council: 'CRM', council_number: '', council_uf: 'DF',
+  rqe: '', observation: '', active: true,
+});
 const blankSvc  = () => ({ name: '', price: 0, duration: 60, duration_minutes: 60, category: 'Consultas', description: '' });
 
 const Settings: React.FC<Props> = ({
@@ -48,11 +62,24 @@ const Settings: React.FC<Props> = ({
   const [editingProf, setEditingProf]   = useState<Professional | null>(null);
   const [profForm, setProfForm]         = useState(blankProf());
   const [showProfForm, setShowProfForm] = useState(false);
+  const [profTab, setProfTab]           = useState<ProfTab>('dados');
+  const [schedule, setSchedule]         = useState(blankSchedule());
+  const [profPhoto, setProfPhoto]       = useState<string>('');
 
-  const openNewProf  = () => { setProfForm(blankProf()); setEditingProf(null); setShowProfForm(true); };
+  const openNewProf  = () => { setProfForm(blankProf()); setEditingProf(null); setProfPhoto(''); setSchedule(blankSchedule()); setProfTab('dados'); setShowProfForm(true); };
   const openEditProf = (p: Professional) => {
     setEditingProf(p);
-    setProfForm({ name: p.name, specialty: p.specialty, color: p.color, email: p.email || '', phone: p.phone || '' });
+    setProfPhoto((p as any).photo_url || '');
+    setSchedule(blankSchedule());
+    setProfTab('dados');
+    setProfForm({
+      title: p.title || 'Nenhum', name: p.name, social_name: p.social_name || '',
+      specialty: p.specialty, color: p.color, email: p.email || '', phone: p.phone || '',
+      phone2: p.phone2 || '', gender: p.gender || '', birth_date: p.birth_date || '',
+      cpf: p.cpf || '', cns: p.cns || '', council: p.council || 'CRM',
+      council_number: p.council_number || '', council_uf: p.council_uf || 'DF',
+      rqe: p.rqe || '', observation: p.observation || '', active: p.active ?? true,
+    });
     setShowProfForm(true);
   };
   const cancelProfForm = () => { setShowProfForm(false); setEditingProf(null); };
@@ -61,18 +88,24 @@ const Settings: React.FC<Props> = ({
     if (!profForm.name.trim()) { showToast('error', 'Nome e obrigatorio'); return; }
     try {
       setSaving(true);
+      const payload = {
+        title: profForm.title === 'Nenhum' ? null : profForm.title,
+        name: profForm.name, social_name: profForm.social_name || null,
+        specialty: profForm.specialty, color: profForm.color,
+        email: profForm.email || null, phone: profForm.phone || null, phone2: profForm.phone2 || null,
+        gender: profForm.gender || null, birth_date: profForm.birth_date || null,
+        cpf: profForm.cpf || null, cns: profForm.cns || null,
+        council: profForm.council || null, council_number: profForm.council_number || null,
+        council_uf: profForm.council_uf || null, rqe: profForm.rqe || null,
+        observation: profForm.observation || null, active: profForm.active,
+        photo_url: profPhoto || null,
+      };
       if (editingProf) {
-        const { error } = await supabase.from('professionals').update({
-          name: profForm.name, specialty: profForm.specialty,
-          color: profForm.color, email: profForm.email, phone: profForm.phone,
-        }).eq('id', editingProf.id);
+        const { error } = await supabase.from('professionals').update(payload).eq('id', editingProf.id);
         if (error) throw error;
         showToast('success', 'Profissional atualizado!');
       } else {
-        const { error } = await supabase.from('professionals').insert({
-          name: profForm.name, specialty: profForm.specialty,
-          color: profForm.color, email: profForm.email, phone: profForm.phone,
-        });
+        const { error } = await supabase.from('professionals').insert(payload);
         if (error) throw error;
         showToast('success', 'Profissional adicionado!');
       }
@@ -200,50 +233,225 @@ const Settings: React.FC<Props> = ({
           </div>
 
           {showProfForm && (
-            <div className="mb-5 bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
-              <h4 className="text-sm font-black text-slate-800">{editingProf ? 'Editar Profissional' : 'Novo Profissional'}</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2 space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nome *</label>
-                  <input className="premium-input" placeholder="Dr. Nome Sobrenome"
-                    value={profForm.name} onChange={e => setProfForm(f => ({ ...f, name: e.target.value }))} />
+            <div className="mb-5 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+
+              {/* Header com foto + nome + toggle ativo */}
+              <div className="flex items-center gap-4 px-5 py-4 bg-slate-50 border-b border-slate-100">
+                <AvatarUpload
+                  currentUrl={profPhoto}
+                  name={profForm.name || 'Novo'}
+                  color={PROF_COLORS[profForm.color]?.border || '#6366f1'}
+                  size="md"
+                  folder="professionals"
+                  onUpload={url => setProfPhoto(url)}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800">
+                    {profForm.title && profForm.title !== 'Nenhum' ? profForm.title + ' ' : ''}{profForm.name || 'Novo Profissional'}
+                  </p>
+                  <p className="text-xs text-slate-400">{profForm.specialty || 'Especialidade não definida'}</p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Especialidade</label>
-                  <input className="premium-input" placeholder="Ex: Ortopedia"
-                    value={profForm.specialty} onChange={e => setProfForm(f => ({ ...f, specialty: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Cor no calendario</label>
-                  <div className="flex gap-2 flex-wrap pt-1">
-                    {Object.entries(PROF_COLORS).map(([key, val]) => (
-                      <button key={key} title={val.label} onClick={() => setProfForm(f => ({ ...f, color: key }))}
-                        style={{ background: val.bg, border: '2px solid ' + val.border }}
-                        className={`w-7 h-7 rounded-lg transition-all ${profForm.color === key ? 'ring-2 ring-offset-1 ring-slate-600 scale-110' : 'opacity-70 hover:opacity-100'}`}
-                      />
-                    ))}
+                <label className="flex items-center gap-2 cursor-pointer shrink-0">
+                  <span className="text-xs text-slate-500">Ativo</span>
+                  <div className="relative" onClick={() => setProfForm(f => ({ ...f, active: !f.active }))}>
+                    <div className={`w-9 h-5 rounded-full transition-colors ${profForm.active ? 'bg-indigo-600' : 'bg-slate-300'}`} />
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${profForm.active ? 'translate-x-4' : ''}`} />
                   </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">E-mail</label>
-                  <input type="email" className="premium-input" placeholder="email@clinica.com"
-                    value={profForm.email} onChange={e => setProfForm(f => ({ ...f, email: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Telefone</label>
-                  <input className="premium-input" placeholder="(11) 99999-9999"
-                    value={profForm.phone} onChange={e => setProfForm(f => ({ ...f, phone: e.target.value }))} />
-                </div>
+                </label>
               </div>
-              <div className="flex gap-2 pt-1">
-                <button onClick={cancelProfForm} className="px-4 py-2 border border-slate-200 text-slate-500 text-xs font-bold rounded-xl hover:bg-slate-100 transition-all">
-                  Cancelar
-                </button>
-                <button onClick={saveProf} disabled={saving}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all">
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  Salvar
-                </button>
+
+              {/* Abas */}
+              <div className="flex border-b border-slate-100">
+                {([
+                  { id: 'dados',    label: 'Dados Principais', Icon: User  },
+                  { id: 'horarios', label: 'Horários',         Icon: Clock },
+                ] as { id: ProfTab; label: string; Icon: React.ElementType }[]).map(({ id, label, Icon }) => (
+                  <button key={id} onClick={() => setProfTab(id)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-all
+                      ${profTab === id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                    <Icon className="w-3.5 h-3.5" />{label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="p-5 space-y-5">
+
+                {/* ── ABA: DADOS PRINCIPAIS ── */}
+                {profTab === 'dados' && (
+                  <>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Identificação</p>
+                      <div className="grid grid-cols-6 gap-3">
+                        <div className="col-span-1 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Título</label>
+                          <select className="premium-input appearance-none" value={profForm.title}
+                            onChange={e => setProfForm(f => ({ ...f, title: e.target.value }))}>
+                            {TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div className="col-span-3 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Nome *</label>
+                          <input className="premium-input" placeholder="Nome completo"
+                            value={profForm.name} onChange={e => setProfForm(f => ({ ...f, name: e.target.value }))} />
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Nome Social</label>
+                          <input className="premium-input" placeholder="Como prefere ser chamado(a)"
+                            value={profForm.social_name} onChange={e => setProfForm(f => ({ ...f, social_name: e.target.value }))} />
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Nascimento</label>
+                          <input type="date" className="premium-input" value={profForm.birth_date}
+                            onChange={e => setProfForm(f => ({ ...f, birth_date: e.target.value }))} />
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Sexo</label>
+                          <select className="premium-input appearance-none" value={profForm.gender}
+                            onChange={e => setProfForm(f => ({ ...f, gender: e.target.value }))}>
+                            <option value="">Selecione</option>
+                            <option>Masculino</option><option>Feminino</option><option>Outro</option>
+                          </select>
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">CPF</label>
+                          <input className="premium-input" placeholder="000.000.000-00" value={profForm.cpf}
+                            onChange={e => setProfForm(f => ({ ...f, cpf: e.target.value }))} />
+                        </div>
+                        <div className="col-span-3 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Especialidade</label>
+                          <input className="premium-input" placeholder="Ex: Nutrição, Fisioterapia" value={profForm.specialty}
+                            onChange={e => setProfForm(f => ({ ...f, specialty: e.target.value }))} />
+                        </div>
+                        <div className="col-span-3 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">CNS</label>
+                          <input className="premium-input" placeholder="Cartão Nacional de Saúde" value={profForm.cns}
+                            onChange={e => setProfForm(f => ({ ...f, cns: e.target.value }))} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Registro no Conselho</p>
+                      <div className="grid grid-cols-6 gap-3">
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Conselho</label>
+                          <select className="premium-input appearance-none" value={profForm.council}
+                            onChange={e => setProfForm(f => ({ ...f, council: e.target.value }))}>
+                            {COUNCILS.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Número</label>
+                          <input className="premium-input" placeholder="Ex: 18400" value={profForm.council_number}
+                            onChange={e => setProfForm(f => ({ ...f, council_number: e.target.value }))} />
+                        </div>
+                        <div className="col-span-1 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">UF</label>
+                          <select className="premium-input appearance-none" value={profForm.council_uf}
+                            onChange={e => setProfForm(f => ({ ...f, council_uf: e.target.value }))}>
+                            {UF_LIST.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                          </select>
+                        </div>
+                        <div className="col-span-1 space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">RQE</label>
+                          <input className="premium-input" placeholder="RQE" value={profForm.rqe}
+                            onChange={e => setProfForm(f => ({ ...f, rqe: e.target.value }))} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Contato</p>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Celular</label>
+                          <input className="premium-input" placeholder="(61) 99999-9999" value={profForm.phone}
+                            onChange={e => setProfForm(f => ({ ...f, phone: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">Telefone</label>
+                          <input className="premium-input" placeholder="(61) 3333-4444" value={profForm.phone2}
+                            onChange={e => setProfForm(f => ({ ...f, phone2: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider">E-mail</label>
+                          <input type="email" className="premium-input" placeholder="email@clinica.com" value={profForm.email}
+                            onChange={e => setProfForm(f => ({ ...f, email: e.target.value }))} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Cor na Agenda</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {Object.entries(PROF_COLORS).map(([key, val]) => (
+                            <button key={key} type="button" title={val.label}
+                              onClick={() => setProfForm(f => ({ ...f, color: key }))}
+                              style={{ background: val.bg, border: '2px solid ' + val.border }}
+                              className={`w-7 h-7 rounded-lg transition-all ${profForm.color === key ? 'ring-2 ring-offset-1 ring-slate-600 scale-110' : 'opacity-70 hover:opacity-100'}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Observações</p>
+                        <textarea className="premium-input resize-none h-16 text-sm" placeholder="Observações internas..."
+                          value={profForm.observation}
+                          onChange={e => setProfForm(f => ({ ...f, observation: e.target.value }))} />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* ── ABA: HORÁRIOS ── */}
+                {profTab === 'horarios' && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-4">Horários de Atendimento</p>
+                    <div className="space-y-2">
+                      {schedule.map((row, i) => (
+                        <div key={row.day} className="flex items-center gap-3">
+                          <button type="button"
+                            onClick={() => setSchedule(s => s.map((r, j) => j === i ? { ...r, active: !r.active } : r))}
+                            className={`w-5 h-5 rounded flex items-center justify-center border transition-all shrink-0
+                              ${row.active ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 bg-white'}`}>
+                            {row.active && <Check className="w-3 h-3" />}
+                          </button>
+                          <span className={`text-xs w-20 shrink-0 ${row.active ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
+                            {row.day}
+                          </span>
+                          {row.active ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <input type="time" value={row.start}
+                                onChange={e => setSchedule(s => s.map((r, j) => j === i ? { ...r, start: e.target.value } : r))}
+                                className="premium-input py-1.5 text-sm w-28" />
+                              <span className="text-slate-400 text-xs">até</span>
+                              <input type="time" value={row.end}
+                                onChange={e => setSchedule(s => s.map((r, j) => j === i ? { ...r, end: e.target.value } : r))}
+                                className="premium-input py-1.5 text-sm w-28" />
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Não atende</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-4">
+                      * Os horários são salvos localmente por enquanto. Integração com banco de dados em breve.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1 border-t border-slate-100">
+                  <button onClick={cancelProfForm} className="px-4 py-2 border border-slate-200 text-slate-500 text-xs font-medium rounded-xl hover:bg-slate-100 transition-all">
+                    Cancelar
+                  </button>
+                  <button onClick={saveProf} disabled={saving}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all">
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    Salvar Profissional
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -259,13 +467,17 @@ const Settings: React.FC<Props> = ({
               const colors = PROF_COLORS[p.color] || PROF_COLORS['blue'];
               return (
                 <div key={p.id} className="flex items-center gap-4 bg-white border border-slate-100 rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-base shrink-0"
+                  <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center font-semibold text-sm shrink-0"
                     style={{ background: colors.bg, color: colors.border }}>
-                    {p.name.charAt(0)}
+                    {(p as any).photo_url
+                      ? <img src={(p as any).photo_url} alt={p.name} className="w-full h-full object-cover" />
+                      : p.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-black text-slate-800 truncate">{p.name}</p>
-                    <p className="text-xs text-slate-400 font-semibold">{p.specialty || 'Sem especialidade'}</p>
+                    <p className="text-sm font-semibold text-slate-800 truncate">
+                      {p.title && p.title !== 'Nenhum' ? p.title + ' ' : ''}{p.name}
+                    </p>
+                    <p className="text-xs text-slate-400">{p.specialty || 'Sem especialidade'}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <div className="w-3 h-3 rounded-full mr-2" style={{ background: colors.border }} />

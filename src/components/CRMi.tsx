@@ -126,6 +126,8 @@ const CRMi: React.FC<CRMiProps> = ({ onSelectPatient, patients: initialPatients,
 
   const getPatientsByStatus = (columnId: string) => {
     return localPatients.filter(p => {
+      // Só mostra pacientes marcados como lead no CRM — exclui pacientes clínicos do Feegow
+      if (!(p as any).is_lead) return false;
       const statusBanco = (p.status || 'lead').toLowerCase();
       if (columnId === 'lead') return ['lead', 'novos leads', 'new', 'novo'].includes(statusBanco);
       if (columnId === 'negotiation') return ['negotiation', 'em conversa', 'negociacao'].includes(statusBanco);
@@ -177,7 +179,7 @@ const CRMi: React.FC<CRMiProps> = ({ onSelectPatient, patients: initialPatients,
           }
         }
 
-        const { error } = await supabase.from('patients').insert([{ ...payload, status: 'lead' }]);
+        const { error } = await supabase.from('patients').insert([{ ...payload, status: 'lead', is_lead: true }]);
         if (error) throw error;
       }
       setShowAddModal(false);

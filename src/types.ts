@@ -102,10 +102,23 @@ export interface Patient {
 export interface Professional {
   id: string;
   name: string;
+  title?: string;
   specialty: string;
   color: string;
   email?: string;
   phone?: string;
+  phone2?: string;
+  gender?: string;
+  birth_date?: string;
+  cpf?: string;
+  cns?: string;
+  council?: string;
+  council_number?: string;
+  council_uf?: string;
+  rqe?: string;
+  social_name?: string;
+  observation?: string;
+  active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
