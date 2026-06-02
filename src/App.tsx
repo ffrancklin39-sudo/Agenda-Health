@@ -140,7 +140,13 @@ const App: React.FC = () => {
       if (error) throw error;
       setProfessionals((data || []).map((p: any) => ({
         id: String(p.id), name: p.name, specialty: p.specialty || '',
-        color: p.color || 'blue', email: p.email || '', phone: p.phone || '', created_at: p.created_at,
+        color: p.color || 'blue', email: p.email || '', phone: p.phone || '',
+        phone2: p.phone2 || '', title: p.title || '', social_name: p.social_name || '',
+        gender: p.gender || '', birth_date: p.birth_date || '', cpf: p.cpf || '',
+        cns: p.cns || '', council: p.council || '', council_number: p.council_number || '',
+        council_uf: p.council_uf || '', rqe: p.rqe || '', observation: p.observation || '',
+        active: p.active ?? true, photo_url: p.photo_url || '',
+        created_at: p.created_at,
       })));
     } catch (e) { console.error('Erro ao buscar profissionais:', e); }
   };

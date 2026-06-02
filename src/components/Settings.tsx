@@ -35,7 +35,7 @@ interface Props {
 }
 
 const TITLES = ['Nenhum', 'Sr.', 'Sra.', 'Dr.', 'Dra.', 'Prof.', 'Profa.'];
-const COUNCILS = ['CRM', 'CRN', 'CRP', 'CRO', 'CREFITO', 'CRF', 'COREN', 'CFN', 'Outro'];
+const COUNCILS = ['CRM', 'CRN', 'CRP', 'CRO', 'CREFITO', 'CRF', 'COREN', 'CFN', 'CRBM', 'CRTH', 'Outro'];
 const UF_LIST = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
 const blankProf = () => ({
@@ -477,7 +477,17 @@ const Settings: React.FC<Props> = ({
                     <p className="text-sm font-semibold text-slate-800 truncate">
                       {p.title && p.title !== 'Nenhum' ? p.title + ' ' : ''}{p.name}
                     </p>
-                    <p className="text-xs text-slate-400">{p.specialty || 'Sem especialidade'}</p>
+                    <p className="text-xs text-slate-400">
+                      {p.specialty || 'Sem especialidade'}
+                      {(p as any).council && (p as any).council_number && (
+                        <span className="ml-2 text-slate-300">·</span>
+                      )}
+                      {(p as any).council && (p as any).council_number && (
+                        <span className="ml-1 text-indigo-400 font-medium">
+                          {(p as any).council} {(p as any).council_number}{(p as any).council_uf ? `/${(p as any).council_uf}` : ''}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <div className="w-3 h-3 rounded-full mr-2" style={{ background: colors.border }} />

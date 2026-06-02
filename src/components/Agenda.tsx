@@ -122,8 +122,79 @@ const Agenda: React.FC<Props> = ({
   const [showDrop, setShowDrop]           = useState(false);
   const [newPatPhone, setNewPatPhone]     = useState('');
 
+  // ── Recorrência (pacotes) ──
+  const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const [useRecurrence, setUseRecurrence]     = useState(false);
+  const [recDays, setRecDays]                 = useState<number[]>([]); // dias da semana 0=Dom
+  const [recSessions, setRecSessions]         = useState(10);
+  const [recPreview, setRecPreview]           = useState<string[]>([]);
+  const [showRecPreview, setShowRecPreview]   = useState(false);
+
+  const generateRecurrenceDates = (startDate: string, days: number[], sessions: number): string[] => {
+    if (!startDate || days.length === 0 || sessions <= 0) return [];
+    const dates: string[] = [];
+    const cur = new Date(startDate + 'T12:00');
+    // inclui a data de início se for um dos dias selecionados
+    while (dates.length < sessions) {
+      if (days.includes(cur.getDay())) dates.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+      if (dates.length >= sessions) break;
+    }
+    return dates;
+  };
+
+  const toggleRecDay = (day: number) => {
+    setRecDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
+  };
+
   // ── Appointments (próprio state — não usa patients como fonte) ──
   const [appointments, setAppointments]   = useState<Appointment[]>([]);
+
+  // ── Bloqueios de agenda ──
+  interface BlockedSlot { id: string; professional_id: string; start_datetime: string; end_datetime: string; reason?: string; }
+  const [blockedSlots, setBlockedSlots]     = useState<BlockedSlot[]>([]);
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [blockForm, setBlockForm]           = useState({ professional_id: '', date: '', end_date: '', start: '08:00', end: '18:00', reason: '', full_day: false });
+  const [savingBlock, setSavingBlock]       = useState(false);
+
+  const fetchBlockedSlots = async () => {
+    const ref  = new Date();
+    const from = new Date(ref); from.setMonth(from.getMonth() - 1);
+    const to   = new Date(ref); to.setMonth(to.getMonth() + 12);
+    const { data } = await supabase.from('blocked_slots')
+      .select('*').gte('start_datetime', from.toISOString()).lte('start_datetime', to.toISOString());
+    setBlockedSlots((data || []) as BlockedSlot[]);
+  };
+
+  const saveBlock = async () => {
+    if (!blockForm.professional_id || !blockForm.date) return;
+    setSavingBlock(true);
+    const startTime = blockForm.full_day ? '00:00' : blockForm.start;
+    const endTime   = blockForm.full_day ? '23:59' : blockForm.end;
+    // Se tiver data final diferente, cria um registro por dia
+    const startD = new Date(blockForm.date + 'T12:00');
+    const endD   = blockForm.end_date ? new Date(blockForm.end_date + 'T12:00') : startD;
+    const records = [];
+    for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+      const ds = d.toISOString().slice(0, 10);
+      records.push({
+        professional_id: blockForm.professional_id,
+        start_datetime:  `${ds}T${startTime}:00`,
+        end_datetime:    `${ds}T${endTime}:00`,
+        reason:          blockForm.reason || null,
+      });
+    }
+    await supabase.from('blocked_slots').insert(records);
+    setSavingBlock(false);
+    setShowBlockModal(false);
+    setBlockForm({ professional_id: '', date: '', end_date: '', start: '08:00', end: '18:00', reason: '', full_day: false });
+    fetchBlockedSlots();
+  };
+
+  const deleteBlock = async (id: string) => {
+    await supabase.from('blocked_slots').delete().eq('id', id);
+    fetchBlockedSlots();
+  };
 
   const fetchAppointments = async (centerDate?: Date) => {
     try {
@@ -171,6 +242,7 @@ const Agenda: React.FC<Props> = ({
   // Busca inicial + realtime
   useEffect(() => {
     fetchAppointments();
+    fetchBlockedSlots();
 
     const channel = supabase
       .channel('agenda-realtime')
@@ -279,10 +351,26 @@ const Agenda: React.FC<Props> = ({
 
   const handleEditSave = async () => {
     if (!editingApt) return;
+    const [dh, dm] = editDuration.split(':').map(Number);
+    const dur = (dh || 0) * 60 + (dm || 0) || 60;
+    const profId = editProfId || editingApt.professional_id;
+    if (profId) {
+      const aptStart = new Date(`${editDate}T${editTime}:00`).getTime();
+      const aptEnd   = aptStart + dur * 60000;
+      const conflict = blockedSlots.find(b => {
+        if (b.professional_id !== profId) return false;
+        const bStart = new Date(b.start_datetime).getTime();
+        const bEnd   = new Date(b.end_datetime).getTime();
+        return aptStart < bEnd && aptEnd > bStart;
+      });
+      if (conflict) {
+        const profName = professionals.find(p => p.id === profId)?.name?.split(' ')[0] || 'profissional';
+        setToast({ type: 'error', msg: `${profName} está com agenda bloqueada neste horário${conflict.reason ? ` (${conflict.reason})` : ''}.` });
+        return;
+      }
+    }
     setSaving(true);
     try {
-      const [dh, dm] = editDuration.split(':').map(Number);
-      const dur = (dh || 0) * 60 + (dm || 0) || 60;
       const updates: Record<string, any> = {
         date_time:        `${editDate}T${editTime}:00`,
         duration_minutes: dur,
@@ -366,26 +454,82 @@ const Agenda: React.FC<Props> = ({
       patientId = String(newPat.id);
     }
     if (!formDate || !formTime) { setToast({ type: 'error', msg: 'Informe data e horário.' }); return; }
+
+    // Valida bloqueio de agenda
+    if (formProfId) {
+      const [dh, dm] = formDuration.split(':').map(Number);
+      const dur = (dh || 0) * 60 + (dm || 0) || 60;
+      const aptStart = new Date(`${formDate}T${formTime}:00`).getTime();
+      const aptEnd   = aptStart + dur * 60000;
+      const conflict = blockedSlots.find(b => {
+        if (b.professional_id !== formProfId) return false;
+        const bStart = new Date(b.start_datetime).getTime();
+        const bEnd   = new Date(b.end_datetime).getTime();
+        return aptStart < bEnd && aptEnd > bStart;
+      });
+      if (conflict) {
+        const profName = professionals.find(p => p.id === formProfId)?.name?.split(' ')[0] || 'profissional';
+        setToast({ type: 'error', msg: `${profName} está com agenda bloqueada neste horário${conflict.reason ? ` (${conflict.reason})` : ''}.` });
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const [dh, dm] = formDuration.split(':').map(Number);
       const dur = (dh || 0) * 60 + (dm || 0) || 60;
-      const newApt: Record<string, any> = {
-        patient_id:       patientId,
-        date_time:        `${formDate}T${formTime}:00`,
-        duration_minutes: dur,
-        status:           'scheduled',
-      };
-      if (formProfId)    newApt.professional_id = formProfId;
-      if (formServiceId) newApt.service_id       = formServiceId;
-      const { error } = await supabase.from('appointments').insert(newApt);
-      if (error) throw error;
-      // Atualiza status do paciente para 'scheduled' no CRM
+
+      if (useRecurrence && recDays.length > 0 && recSessions > 1) {
+        // ── Modo recorrência: cria série + múltiplos agendamentos ──
+        const dates = generateRecurrenceDates(formDate, recDays, recSessions);
+        if (dates.length === 0) { setToast({ type: 'error', msg: 'Selecione pelo menos 1 dia da semana.' }); setSaving(false); return; }
+
+        // Cria a série
+        const { data: seriesData, error: seriesErr } = await supabase
+          .from('appointment_series')
+          .insert({ patient_id: patientId, professional_id: formProfId || null, service_id: formServiceId || null, total_sessions: dates.length })
+          .select('id').single();
+        if (seriesErr) throw seriesErr;
+        const seriesId = seriesData.id;
+
+        // Cria todos os agendamentos
+        const apts = dates.map((date, i) => ({
+          patient_id:       patientId,
+          date_time:        `${date}T${formTime}:00`,
+          duration_minutes: dur,
+          status:           'scheduled',
+          professional_id:  formProfId || null,
+          service_id:       formServiceId || null,
+          series_id:        seriesId,
+          session_number:   i + 1,
+        }));
+        const { error: aptErr } = await supabase.from('appointments').insert(apts);
+        if (aptErr) throw aptErr;
+        setToast({ type: 'success', msg: `${dates.length} sessões de ${selPatient.name} agendadas!` });
+      } else {
+        // ── Modo simples: 1 agendamento ──
+        const newApt: Record<string, any> = {
+          patient_id:       patientId,
+          date_time:        `${formDate}T${formTime}:00`,
+          duration_minutes: dur,
+          status:           'scheduled',
+        };
+        if (formProfId)    newApt.professional_id = formProfId;
+        if (formServiceId) newApt.service_id       = formServiceId;
+        const { error } = await supabase.from('appointments').insert(newApt);
+        if (error) throw error;
+        setToast({ type: 'success', msg: `Agendamento de ${selPatient.name} salvo!` });
+      }
+
+      // Atualiza status do paciente
       await supabase.from('patients').update({ status: 'scheduled' }).eq('id', patientId);
       await fetchAppointments();
       setShowQuickAdd(false);
       setNewPatPhone('');
-      setToast({ type: 'success', msg: `Agendamento de ${selPatient.name} salvo!` });
+      setUseRecurrence(false);
+      setRecDays([]);
+      setRecSessions(10);
+      setShowRecPreview(false);
       onRefresh();
     } catch (err: any) {
       setToast({ type: 'error', msg: `Erro ao salvar: ${err?.message}` });
@@ -610,6 +754,18 @@ const Agenda: React.FC<Props> = ({
     const origDate    = parseAptDate(apt.date_time).date;
     const movedAway   = isDragging && dragPreview!.date !== origDate;
 
+    // Tempo dinâmico durante o drag — atualiza em tempo real
+    const liveTimeStr = (() => {
+      if (!isDragging) return timeStr;
+      const pxPerMin = HOUR_HEIGHT / 60 * scale;
+      const startMin = Math.round(previewTop / pxPerMin) + START_HOUR * 60;
+      const durCur   = Math.round(previewH / pxPerMin);
+      const endMin   = startMin + durCur;
+      const sh = Math.floor(startMin / 60) % 24, sm = startMin % 60;
+      const eh = Math.floor(endMin   / 60) % 24, em = endMin   % 60;
+      return `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')} – ${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+    })();
+
     // If card is being dragged to a different column, show ghost on original position
     if (movedAway) {
       return (
@@ -661,10 +817,12 @@ const Agenda: React.FC<Props> = ({
           openEdit(apt);
         }}
       >
-        {/* Time range — always visible when card is tall enough */}
-        <div className={`flex items-center gap-0.5 ${scale > 1 ? 'text-[10px]' : 'text-[8px]'} font-bold opacity-75 leading-none mb-0.5`}>
+        {/* Time range — atualiza em tempo real durante o drag */}
+        <div className={`flex items-center gap-0.5 ${scale > 1 ? 'text-[10px]' : 'text-[8px]'} font-bold leading-none mb-0.5 ${isDragging ? 'opacity-100' : 'opacity-75'}`}>
           <Clock className={scale > 1 ? 'w-3 h-3' : 'w-2.5 h-2.5'} />
-          {timeStr}
+          {isDragging ? (
+            <span className="font-black" style={{ color: colors.border }}>{liveTimeStr}</span>
+          ) : liveTimeStr}
         </div>
 
         {/* Patient name — click opens profile */}
@@ -860,9 +1018,14 @@ const Agenda: React.FC<Props> = ({
                   {HOURS.map(h => (
                     <div key={h}
                       style={{ position: 'absolute', top: (h - START_HOUR) * HOUR_HEIGHT, left: 0, right: 0, height: HOUR_HEIGHT }}
-                      className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors cursor-pointer group"
+                      className={`hover:bg-indigo-50/30 transition-colors cursor-pointer group ${dragPreview ? 'border-b border-slate-200' : 'border-b border-slate-100'}`}
                       onClick={() => openAdd(ds, `${String(h).padStart(2, '0')}:00`)}
                     >
+                      {/* Linhas de 15 em 15 min visíveis durante o drag */}
+                      {dragPreview && [15, 30, 45].map(m => (
+                        <div key={m} style={{ position: 'absolute', top: m * (HOUR_HEIGHT / 60), left: 0, right: 0, height: 1 }}
+                          className="border-t border-slate-100 border-dashed" />
+                      ))}
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <Plus className="w-3 h-3 text-indigo-300" />
                       </div>
@@ -888,6 +1051,48 @@ const Agenda: React.FC<Props> = ({
                       );
                     });
                   })()}
+
+                  {/* Bloqueios de horário */}
+                  {blockedSlots.filter(b => {
+                    const bDate = b.start_datetime.slice(0, 10);
+                    return bDate === ds && (selectedProf === 'all' || b.professional_id === selectedProf);
+                  }).map(b => {
+                    const prof = professionals.find(p => p.id === b.professional_id);
+                    const startH = parseInt(b.start_datetime.slice(11, 13));
+                    const startM = parseInt(b.start_datetime.slice(14, 16));
+                    const endH   = parseInt(b.end_datetime.slice(11, 13));
+                    const endM   = parseInt(b.end_datetime.slice(14, 16));
+                    const topPx  = getTopOffset(startH, startM);
+                    const hPx    = ((endH * 60 + endM) - (startH * 60 + startM)) * (HOUR_HEIGHT / 60);
+                    const c      = getProfColor(prof?.color || 'blue');
+                    return (
+                      <div key={b.id} style={{
+                        position: 'absolute', top: topPx + 2, left: 3, right: 3,
+                        height: Math.max(24, hPx - 4), zIndex: 4,
+                        background: `repeating-linear-gradient(45deg, ${c.bg}, ${c.bg} 6px, ${c.bg}cc 6px, ${c.bg}cc 12px)`,
+                        border: `1.5px dashed ${c.border}`,
+                        borderRadius: 8, opacity: 0.85,
+                        // Quando "Todos" está selecionado, não bloqueia cliques de outros profissionais
+                        pointerEvents: selectedProf === 'all' ? 'none' : 'auto',
+                      }}
+                        className="flex flex-col justify-between px-2 py-1 overflow-hidden"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-semibold" style={{ color: c.border }}>
+                            🔒 {prof?.name?.split(' ')[0]} — {b.reason || 'Bloqueado'}
+                          </span>
+                          {selectedProf !== 'all' && (
+                            <button onClick={() => deleteBlock(b.id)}
+                              className="text-[10px] opacity-60 hover:opacity-100 transition-opacity ml-1"
+                              style={{ color: c.border }}>✕</button>
+                          )}
+                        </div>
+                        <span className="text-[8px] opacity-60" style={{ color: c.border }}>
+                          {b.start_datetime.slice(11, 16)} – {b.end_datetime.slice(11, 16)}
+                        </span>
+                      </div>
+                    );
+                  })}
 
                   {/* Ghost on target column when dragging to a different day */}
                   {renderDragGhost(ds, 1)}
@@ -1047,6 +1252,45 @@ const Agenda: React.FC<Props> = ({
           <Plus className="w-3.5 h-3.5 shrink-0" />
           <span>Novo Agendamento</span>
         </button>
+        <button
+          onClick={() => setShowBlockModal(true)}
+          className="w-full flex items-center justify-center gap-1.5 bg-slate-100 text-slate-600 rounded-xl py-2.5 px-3 text-xs font-semibold hover:bg-slate-200 transition-all active:scale-95"
+        >
+          <span>🔒</span>
+          <span>Bloquear Horário</span>
+        </button>
+
+        {/* Lista de bloqueios futuros */}
+        {blockedSlots.filter(b => b.start_datetime >= new Date().toISOString().slice(0, 10)).length > 0 && (
+          <div className="mt-1">
+            <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5 px-1">Bloqueios</p>
+            <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
+              {blockedSlots
+                .filter(b => b.start_datetime >= new Date().toISOString().slice(0, 10))
+                .sort((a, b) => a.start_datetime.localeCompare(b.start_datetime))
+                .map(b => {
+                  const prof = professionals.find(p => p.id === b.professional_id);
+                  const c = getProfColor(prof?.color || 'blue');
+                  const dateLabel = new Date(b.start_datetime).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                  const isFullDay = b.start_datetime.includes('00:00') && b.end_datetime.includes('23:59');
+                  return (
+                    <div key={b.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-white border border-slate-100 group">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: c.border }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-medium text-slate-700 truncate">{prof?.name?.split(' ')[0]}</p>
+                        <p className="text-[9px] text-slate-400 truncate">
+                          {dateLabel} {isFullDay ? '· Dia inteiro' : `· ${b.start_datetime.slice(11,16)}–${b.end_datetime.slice(11,16)}`}
+                          {b.reason ? ` · ${b.reason}` : ''}
+                        </p>
+                      </div>
+                      <button onClick={() => deleteBlock(b.id)}
+                        className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-400 transition-all text-[10px] shrink-0">✕</button>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
           {renderMiniCal()}
@@ -1067,6 +1311,11 @@ const Agenda: React.FC<Props> = ({
               const initials2 = prof.name.trim().split(/\s+/).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
               return (
                 <button key={prof.id} onClick={() => setSelectedProf(prof.id)}
+                  title={(() => {
+                    const p = prof as any;
+                    const conselho = [p.council, p.council_number, p.council_uf ? `/${p.council_uf}` : ''].filter(Boolean).join(' ');
+                    return [prof.specialty, conselho].filter(Boolean).join(' · ') || undefined;
+                  })()}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[11px] font-medium transition-all ${selectedProf === prof.id ? 'bg-white border border-slate-200 text-slate-800 shadow-sm' : 'text-slate-500 hover:bg-white/60'}`}>
                   {/* Avatar circular com foto ou iniciais */}
                   <div
@@ -1275,9 +1524,84 @@ const Agenda: React.FC<Props> = ({
                     </p>
                   );
                 })()}
+                {/* ── Recorrência ── */}
+                <div className="border border-slate-100 rounded-2xl p-4 space-y-3 bg-slate-50/50">
+                  <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setUseRecurrence(v => !v)}>
+                    <div className="relative">
+                      <div className={`w-9 h-5 rounded-full transition-colors ${useRecurrence ? 'bg-indigo-600' : 'bg-slate-200'}`} />
+                      <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useRecurrence ? 'translate-x-4' : ''}`} />
+                    </div>
+                    <span className="text-sm font-medium text-slate-700">Agendar como pacote / recorrência</span>
+                  </label>
+
+                  {useRecurrence && (
+                    <div className="space-y-3 pt-1">
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Dias da semana</p>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {DAYS_PT.map((d, i) => (
+                            <button key={i} type="button"
+                              onClick={() => toggleRecDay(i)}
+                              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${recDays.includes(i)
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'bg-white text-slate-500 border border-slate-200 hover:border-indigo-300'}`}>
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5">Total de sessões</p>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setRecSessions(s => Math.max(1, s - 1))}
+                              className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-sm font-bold">−</button>
+                            <span className="text-lg font-semibold text-slate-800 w-8 text-center">{recSessions}</span>
+                            <button type="button" onClick={() => setRecSessions(s => Math.min(60, s + 1))}
+                              className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-sm font-bold">+</button>
+                            <span className="text-xs text-slate-400">sessões</span>
+                          </div>
+                        </div>
+                        {recDays.length > 0 && (
+                          <div className="text-right">
+                            <p className="text-[10px] text-slate-400">Frequência</p>
+                            <p className="text-sm font-medium text-indigo-600">{recDays.length}x/semana</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {formDate && recDays.length > 0 && recSessions > 0 && (
+                        <button type="button"
+                          onClick={() => { setRecPreview(generateRecurrenceDates(formDate, recDays, recSessions)); setShowRecPreview(v => !v); }}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium underline">
+                          {showRecPreview ? 'Ocultar' : 'Ver'} as {recSessions} datas →
+                        </button>
+                      )}
+
+                      {showRecPreview && recPreview.length > 0 && (
+                        <div className="bg-white rounded-xl border border-slate-100 p-3 overflow-y-auto custom-scrollbar space-y-1" style={{ maxHeight: '200px' }}>
+                          <p className="text-[10px] text-slate-400 mb-2 font-medium">{recPreview.length} sessões geradas:</p>
+                          {recPreview.map((d, i) => (
+                            <div key={d} className="flex items-center gap-2 text-xs text-slate-600 py-0.5">
+                              <span className="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px] font-bold shrink-0">{i+1}</span>
+                              <span className="capitalize">{new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <button type="submit" disabled={saving || !selPatient || !selPatient.name.trim()}
                   className="w-full premium-button bg-indigo-600 text-white shadow-lg shadow-indigo-900/20 hover:bg-indigo-700 mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : <><Check size={18} /> Confirmar Agendamento</>}
+                  {saving
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</>
+                    : useRecurrence && recDays.length > 0
+                      ? <><Check size={18} /> Agendar {recSessions} sessões</>
+                      : <><Check size={18} /> Confirmar Agendamento</>
+                  }
                 </button>
               </form>
             </div>
@@ -1462,6 +1786,97 @@ const Agenda: React.FC<Props> = ({
           </div>
         </div>
       )}
+      {/* ── Modal: Bloquear Horário ── */}
+      {showBlockModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span>🔒</span>
+                <h3 className="text-base font-semibold text-slate-800">Bloquear Horário</h3>
+              </div>
+              <button onClick={() => setShowBlockModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 transition-all">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Profissional *</label>
+                <select className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white appearance-none"
+                  value={blockForm.professional_id}
+                  onChange={e => setBlockForm(f => ({ ...f, professional_id: e.target.value }))}>
+                  <option value="">Selecione...</option>
+                  {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Data início *</label>
+                  <input type="date" className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    value={blockForm.date}
+                    onChange={e => setBlockForm(f => ({ ...f, date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Data fim (opcional)</label>
+                  <input type="date" className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    value={blockForm.end_date} min={blockForm.date}
+                    onChange={e => setBlockForm(f => ({ ...f, end_date: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Toggle: dia inteiro */}
+              <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setBlockForm(f => ({ ...f, full_day: !f.full_day }))}>
+                <div className="relative">
+                  <div className={`w-9 h-5 rounded-full transition-colors ${blockForm.full_day ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                  <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${blockForm.full_day ? 'translate-x-4' : ''}`} />
+                </div>
+                <span className="text-sm text-slate-600">Bloquear dia inteiro</span>
+              </label>
+
+              {!blockForm.full_day && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Início</label>
+                    <input type="time" className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      value={blockForm.start}
+                      onChange={e => setBlockForm(f => ({ ...f, start: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Fim</label>
+                    <input type="time" className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      value={blockForm.end}
+                      onChange={e => setBlockForm(f => ({ ...f, end: e.target.value }))} />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Motivo (opcional)</label>
+                <input className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  placeholder="Ex: Folga, Reunião, Férias..."
+                  value={blockForm.reason}
+                  onChange={e => setBlockForm(f => ({ ...f, reason: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="flex gap-2 px-5 py-4 border-t border-slate-100">
+              <button onClick={() => setShowBlockModal(false)}
+                className="px-4 py-2 text-sm text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all">
+                Cancelar
+              </button>
+              <button onClick={saveBlock} disabled={savingBlock || !blockForm.professional_id || !blockForm.date}
+                className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-800 text-white text-sm font-medium rounded-xl hover:bg-slate-900 disabled:opacity-50 transition-all">
+                {savingBlock ? <Loader2 className="w-4 h-4 animate-spin" /> : '🔒'}
+                Bloquear Horário
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
