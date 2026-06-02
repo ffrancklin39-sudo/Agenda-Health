@@ -226,6 +226,8 @@ const Agenda: React.FC<Props> = ({
           notes:            a.notes || '',
           created_at:       a.created_at,
           updated_at:       a.updated_at,
+          series_id:        a.series_id || undefined,
+          session_number:   a.session_number || undefined,
         }))
       );
     } catch (err) {
@@ -369,6 +371,11 @@ const Agenda: React.FC<Props> = ({
         return;
       }
     }
+    // Se for série, pergunta se aplica a todos
+    const applyToSeries = editingApt.series_id
+      ? window.confirm('Este agendamento faz parte de um pacote.\n\nClicar OK aplica a alteração (profissional e serviço) a TODAS as sessões futuras.\nClicar Cancelar altera apenas esta sessão.')
+      : false;
+
     setSaving(true);
     try {
       const updates: Record<string, any> = {
@@ -378,8 +385,26 @@ const Agenda: React.FC<Props> = ({
       };
       if (editProfId)    updates.professional_id = editProfId;
       if (editServiceId) updates.service_id       = editServiceId;
-      const { error } = await supabase.from('appointments').update(updates).eq('id', editingApt.id);
-      if (error) throw error;
+
+      if (applyToSeries && editingApt.series_id) {
+        // Aplica profissional e serviço a todas as sessões futuras da série
+        const seriesUpdates: Record<string, any> = { duration_minutes: dur };
+        if (editProfId)    seriesUpdates.professional_id = editProfId;
+        if (editServiceId) seriesUpdates.service_id       = editServiceId;
+        const now = new Date().toISOString();
+        const { error } = await supabase.from('appointments')
+          .update(seriesUpdates)
+          .eq('series_id', editingApt.series_id)
+          .gte('date_time', now);
+        if (error) throw error;
+        // Atualiza só data/hora/status desta sessão
+        await supabase.from('appointments').update({ date_time: updates.date_time, status: editStatus }).eq('id', editingApt.id);
+        setToast({ type: 'success', msg: 'Sessões futuras do pacote atualizadas!' });
+      } else {
+        const { error } = await supabase.from('appointments').update(updates).eq('id', editingApt.id);
+        if (error) throw error;
+        setToast({ type: 'success', msg: 'Agendamento atualizado!' });
+      }
       await fetchAppointments();
       setEditingApt(null);
       setToast({ type: 'success', msg: 'Agendamento atualizado!' });
@@ -390,19 +415,26 @@ const Agenda: React.FC<Props> = ({
     }
   };
 
-  const handleDeleteApt = async () => {
+  const handleDeleteApt = async (deleteSeries = false) => {
     if (!editingApt) return;
     const patName = patients.find(p => p.id === editingApt.patient_id)?.name || 'paciente';
-    if (!window.confirm(`Remover agendamento de ${patName}?`)) return;
+    const msg = deleteSeries
+      ? `Remover TODAS as sessões do pacote de ${patName}? Esta ação não pode ser desfeita.`
+      : `Remover apenas este agendamento de ${patName}?`;
+    if (!window.confirm(msg)) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('appointments').delete().eq('id', editingApt.id);
-      if (error) throw error;
-      // Volta o status do paciente para lead no CRM
-      // Paciente mantém seu status — cancelar consulta não afeta o cadastro
+      if (deleteSeries && editingApt.series_id) {
+        const { error } = await supabase.from('appointments').delete().eq('series_id', editingApt.series_id);
+        if (error) throw error;
+        setToast({ type: 'success', msg: 'Todas as sessões do pacote removidas.' });
+      } else {
+        const { error } = await supabase.from('appointments').delete().eq('id', editingApt.id);
+        if (error) throw error;
+        setToast({ type: 'success', msg: 'Agendamento removido.' });
+      }
       await fetchAppointments();
       setEditingApt(null);
-      setToast({ type: 'success', msg: 'Agendamento removido.' });
     } catch (err: any) {
       setToast({ type: 'error', msg: `Erro: ${err?.message}` });
     } finally {
@@ -1769,19 +1801,32 @@ const Agenda: React.FC<Props> = ({
             </div>
 
             {/* Footer actions */}
-            <div className="px-6 pb-6 pt-4 border-t border-slate-100 flex gap-2.5 shrink-0">
-              <button onClick={handleDeleteApt} disabled={saving}
-                className="px-4 py-2.5 bg-rose-50 text-rose-600 text-sm font-bold rounded-xl hover:bg-rose-100 transition-colors disabled:opacity-50">
-                Excluir
-              </button>
-              <button onClick={() => setEditingApt(null)}
-                className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors">
-                        Cancelar
-              </button>
-              <button onClick={handleEditSave} disabled={saving}
-                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20">
-                {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : <><Check className="w-4 h-4" /> Salvar</>}
-              </button>
+            <div className="px-6 pb-6 pt-4 border-t border-slate-100 shrink-0 space-y-2">
+              {/* Indicador de série */}
+              {editingApt?.series_id && (
+                <div className="flex items-center gap-2 text-[11px] text-indigo-600 bg-indigo-50 px-3 py-2 rounded-xl">
+                  <span>📦</span>
+                  <span>Sessão {editingApt.session_number ? `${editingApt.session_number} do` : 'de um'} pacote</span>
+                  <button onClick={() => handleDeleteApt(true)} disabled={saving}
+                    className="ml-auto text-rose-500 hover:text-rose-700 font-medium transition-colors">
+                    Excluir todo o pacote
+                  </button>
+                </div>
+              )}
+              <div className="flex gap-2.5">
+                <button onClick={() => handleDeleteApt(false)} disabled={saving}
+                  className="px-4 py-2.5 bg-rose-50 text-rose-600 text-sm font-medium rounded-xl hover:bg-rose-100 transition-colors disabled:opacity-50">
+                  Excluir
+                </button>
+                <button onClick={() => setEditingApt(null)}
+                  className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors">
+                  Cancelar
+                </button>
+                <button onClick={handleEditSave} disabled={saving}
+                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20">
+                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : <><Check className="w-4 h-4" /> Salvar</>}
+                </button>
+              </div>
             </div>
           </div>
         </div>

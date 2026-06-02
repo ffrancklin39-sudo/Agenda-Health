@@ -145,6 +145,8 @@ export interface Appointment {
   duration_minutes: number;
   status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
   notes?: string;
+  series_id?: string;
+  session_number?: number;
   created_at?: string;
   updated_at?: string;
 }
