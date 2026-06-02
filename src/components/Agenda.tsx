@@ -1410,21 +1410,25 @@ const Agenda: React.FC<Props> = ({
       {/* ── Modal: Novo Agendamento ── */}
       {showQuickAdd && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl relative overflow-hidden">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl relative flex flex-col max-h-[92vh]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 blur-3xl opacity-50 pointer-events-none" />
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-8">
+            {/* Header fixo */}
+            <div className="relative z-10 px-8 pt-8 pb-4 shrink-0">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-11 h-11 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm"><CalIcon size={22} /></div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight">Novo Agendamento</h3>
-                    <p className="text-slate-400 text-xs font-semibold mt-0.5">{prefilled.date}</p>
+                    <h3 className="text-xl font-semibold text-slate-900">Novo Agendamento</h3>
+                    <p className="text-slate-400 text-xs mt-0.5">{prefilled.date}</p>
                   </div>
                 </div>
                 <button onClick={() => setShowQuickAdd(false)} className="w-9 h-9 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-all">
                   <X className="w-4 h-4 text-slate-400" />
                 </button>
               </div>
+            </div>
+            {/* Conteúdo com scroll */}
+            <div className="relative z-10 overflow-y-auto custom-scrollbar px-8 pb-8 flex-1">
               <form className="space-y-5" onSubmit={handleSubmit}>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -1636,7 +1640,7 @@ const Agenda: React.FC<Props> = ({
                   }
                 </button>
               </form>
-            </div>
+            </div>{/* fim scroll */}
           </div>
         </div>
       )}
