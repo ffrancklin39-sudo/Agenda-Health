@@ -1478,34 +1478,29 @@ const Agenda: React.FC<Props> = ({
 
                   {showDrop && !selPatient && patientQuery.trim().length >= 1 && (
                     <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-2xl overflow-hidden">
-                      {patientSuggestions.length > 0
-                        ? patientSuggestions.map(p => (
-                            <button key={p.id} type="button"
-                              onMouseDown={() => { setSelPatient(p); setPatientQuery(''); setShowDrop(false); }}
-                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left border-b border-slate-50 last:border-b-0">
-                              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-sm shrink-0">{p.name.charAt(0).toUpperCase()}</div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-bold text-slate-800 truncate">{p.name}</p>
-                                {p.phone && <p className="text-[10px] text-slate-400 font-semibold">{p.phone}</p>}
-                              </div>
-                            </button>
-                          ))
-                        : (
-                          <button type="button"
-                            onMouseDown={() => {
-                              // Cria paciente temporário "novo" com o nome digitado
-                              setSelPatient({ id: 'NEW_FROM_AGENDA', name: patientQuery.trim(), email: '', phone: '', status: 'lead' } as any);
-                              setShowDrop(false);
-                            }}
-                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50 transition-colors text-left">
-                            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-sm shrink-0">+</div>
-                            <div>
-                              <p className="text-sm font-bold text-emerald-700">Criar "{patientQuery.trim()}"</p>
-                              <p className="text-[10px] text-slate-400 font-semibold">Novo paciente — salvo ao agendar</p>
-                            </div>
-                          </button>
-                        )
-                      }
+                      {patientSuggestions.length > 0 && patientSuggestions.map(p => (
+                        <button key={p.id} type="button"
+                          onMouseDown={() => { setSelPatient(p); setPatientQuery(''); setShowDrop(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left border-b border-slate-50">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-sm shrink-0">{p.name.charAt(0).toUpperCase()}</div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-800 truncate">{p.name}</p>
+                            {p.phone && <p className="text-[10px] text-slate-400 font-semibold">{p.phone}</p>}
+                          </div>
+                        </button>
+                      ))}
+                      <button type="button"
+                        onMouseDown={() => {
+                          setSelPatient({ id: 'NEW_FROM_AGENDA', name: patientQuery.trim(), email: '', phone: '', status: 'lead' } as any);
+                          setShowDrop(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50 transition-colors text-left border-t border-slate-100">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-sm shrink-0">+</div>
+                        <div>
+                          <p className="text-sm font-bold text-emerald-700">Criar "{patientQuery.trim()}"</p>
+                          <p className="text-[10px] text-slate-400 font-semibold">Novo paciente — salvo ao agendar</p>
+                        </div>
+                      </button>
                     </div>
                   )}
                 </div>
