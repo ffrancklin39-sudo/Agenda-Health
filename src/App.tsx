@@ -14,13 +14,15 @@ import CRMi from './components/CRMi';
 import Login from './components/Login';
 import PasswordReset from './components/PasswordReset';
 import Tasks from './components/Tasks';
+import ProfitDashboard from './components/bi/ProfitDashboard';
+import Reports from './components/admin/Reports';
 import { supabase } from './services/supabaseClient';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isRecovery, setIsRecovery] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard'|'kanban'|'patients'|'agenda'|'automations'|'finance'|'services'|'settings'|'tasks'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard'|'kanban'|'patients'|'agenda'|'automations'|'finance'|'services'|'settings'|'tasks'|'bi'|'reports'>('dashboard');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [agendaRefreshTrigger, setAgendaRefreshTrigger] = useState(0);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
@@ -350,8 +352,8 @@ const App: React.FC = () => {
           className={`flex-1 min-h-0 ${nopad ? 'overflow-hidden' : 'overflow-y-auto px-6 py-6 custom-scrollbar'}`}
           onClick={() => showNotifications && setShowNotifications(false)}
         >
-          <div className={nopad ? 'h-full' : 'max-w-7xl mx-auto h-full'}>
-            <div className={`h-full bg-white rounded-2xl shadow-sm ${nopad ? 'overflow-hidden' : 'px-6 py-6 lg:px-8 lg:py-8'}`}>
+          <div className={nopad ? 'h-full' : 'max-w-7xl mx-auto'}>
+            <div className={`bg-white rounded-2xl shadow-sm ${nopad ? 'h-full overflow-hidden' : 'px-6 py-6 lg:px-8 lg:py-8'}`}>
               {loading && patients.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4">
                   <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
@@ -368,6 +370,8 @@ const App: React.FC = () => {
                   {activeTab === 'services'     && <ServicesCatalog services={services} />}
                   {activeTab === 'settings'     && <Settings professionals={professionals} services={services} onRefreshProfessionals={fetchProfessionals} onRefreshServices={fetchServices} session={session} />}
                   {activeTab === 'tasks'        && <Tasks professionals={professionals} session={session} onPendingCountChange={setPendingTasksCount} />}
+                  {activeTab === 'bi'           && <ProfitDashboard />}
+                  {activeTab === 'reports'      && <Reports />}
                 </>
               )}
             </div>

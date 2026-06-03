@@ -2,14 +2,30 @@ import React, { useState, useMemo } from 'react';
 import {
   DollarSign, TrendingUp, Users, Target, Calendar,
   Download, ArrowRight, BarChart3, Flame, Zap,
+  LayoutDashboard, BookOpen, CreditCard, Receipt,
 } from 'lucide-react';
 import { Patient, UserRole } from '../types';
+import CaixaDiario   from './admin/finance/CaixaDiario';
+import Lancamentos   from './admin/finance/Lancamentos';
+import ContasPagar   from './admin/finance/ContasPagar';
+import ContasReceber from './admin/finance/ContasReceber';
+
+type FinanceTab = 'visao-geral' | 'caixa' | 'lancamentos' | 'contas-pagar' | 'contas-receber';
 
 interface Props { userRole: UserRole; patients: Patient[]; }
 type PeriodKey = 'mes' | 'trimestre' | 'ano' | 'custom';
 const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
+const FINANCE_TABS: { id: FinanceTab; label: string; icon: React.ElementType }[] = [
+  { id: 'visao-geral',     label: 'Visão Geral',      icon: LayoutDashboard },
+  { id: 'caixa',          label: 'Caixa',             icon: DollarSign },
+  { id: 'lancamentos',    label: 'Lançamentos',        icon: BookOpen },
+  { id: 'contas-pagar',   label: 'Contas a Pagar',    icon: CreditCard },
+  { id: 'contas-receber', label: 'Contas a Receber',  icon: Receipt },
+];
+
 const Finance: React.FC<Props> = ({ patients }) => {
+  const [financeTab, setFinanceTab] = useState<FinanceTab>('visao-geral');
   const now = new Date();
   const [period, setPeriod]           = useState<PeriodKey>('mes');
   const [customStart, setCustomStart] = useState('');
@@ -88,6 +104,34 @@ const Finance: React.FC<Props> = ({ patients }) => {
   const fmtD = (s?:string|null) => s ? new Date(s).toLocaleDateString('pt-BR') : '—';
 
   return (
+    <div className="flex flex-col gap-0 h-full">
+
+      {/* Sub-navegação */}
+      <div className="flex items-center gap-0 border-b border-slate-200 mb-6 overflow-x-auto">
+        {FINANCE_TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setFinanceTab(id)}
+            className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
+              financeTab === id
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-400 hover:text-slate-700'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sub-abas não-visão-geral */}
+      {financeTab === 'caixa'          && <CaixaDiario />}
+      {financeTab === 'lancamentos'    && <Lancamentos />}
+      {financeTab === 'contas-pagar'   && <ContasPagar />}
+      {financeTab === 'contas-receber' && <ContasReceber />}
+
+      {/* Visão Geral — conteúdo original */}
+      {financeTab === 'visao-geral' && (
     <div className="space-y-4 animate-in fade-in duration-500">
 
       {/* Header + filtros */}
@@ -198,40 +242,34 @@ const Finance: React.FC<Props> = ({ patients }) => {
             <Download size={12}/> Exportar
           </button>
         </div>
-        {tableRows.length===0 ? (
-          <div className="py-10 text-center text-slate-400 text-sm">Nenhum atendimento no período.</div>
-        ) : (
-          <table className="w-full text-left" style={{tableLayout:'fixed'}}>
-            <colgroup>
-              <col style={{width:'28%'}}/><col style={{width:'16%'}}/><col style={{width:'16%'}}/><col style={{width:'16%'}}/><col style={{width:'14%'}}/>
-            </colgroup>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                <th className="px-4 py-2">Paciente</th><th className="px-4 py-2">Telefone</th>
-                <th className="px-4 py-2">Origem</th><th className="px-4 py-2">Data</th>
-                <th className="px-4 py-2 text-right">Valor</th>
+              <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wide">
+                <th className="text-left px-4 py-2.5 font-bold">Paciente</th>
+                <th className="text-left px-3 py-2.5 font-bold">Data</th>
+                <th className="text-right px-4 py-2.5 font-bold">Valor</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50 text-xs">
-              {tableRows.map(p=>(
+            <tbody className="divide-y divide-slate-50">
+              {tableRows.map(p => (
                 <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-2 font-semibold text-slate-800 truncate">{p.name}</td>
-                  <td className="px-4 py-2 text-slate-500 truncate">{p.phone||'—'}</td>
-                  <td className="px-4 py-2 text-slate-500 truncate">{(p as any).source||'—'}</td>
-                  <td className="px-4 py-2 text-slate-500">{fmtD(p.appointment_date||p.appointmentDate)}</td>
-                  <td className="px-4 py-2 text-right font-bold text-emerald-600">{p.price?fmt(p.price):'—'}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-700">{p.name}</td>
+                  <td className="px-3 py-2.5 text-slate-500 tabular-nums">
+                    {fmtD(p.appointment_date || p.appointmentDate)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-emerald-600 tabular-nums">
+                    {fmt(p.price || 0)}
+                  </td>
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="bg-slate-50 border-t border-slate-200">
-                <td colSpan={4} className="px-4 py-2 text-xs font-bold text-slate-500">Total</td>
-                <td className="px-4 py-2 text-right text-sm font-black text-emerald-700">{fmt(metrics.revenue)}</td>
-              </tr>
-            </tfoot>
           </table>
-        )}
+        </div>
       </div>
+
+    </div>
+      )}
     </div>
   );
 };

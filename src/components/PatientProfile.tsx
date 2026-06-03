@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X, Save, Loader2, Download,
   User, Phone, Heart, ClipboardList, Paperclip,
@@ -6,11 +6,13 @@ import {
   Mic, Brain, Stethoscope, Pill, Calendar,
   Image, Clock, Receipt, ChevronLeft, ChevronRight,
   AlertCircle, ShieldPlus, Activity, Trash2,
+  Plus, DollarSign, TrendingUp, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
-import { Patient } from '../types';
+import { Patient, PaymentFull, PAYMENT_METHOD_LABELS } from '../types';
 import { phoneMatchKey, toTitleCase } from '../phoneUtils';
 import AvatarUpload from './AvatarUpload';
+import PaymentRegisterModal from './admin/PaymentRegisterModal';
 
 /* -------------------------------------------------
    Tipos auxiliares
@@ -877,13 +879,182 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
 
           {/* FINANCEIRO */}
           {activeTab === 'financeiro' && (
-            <div className="max-w-4xl mx-auto px-6 py-5">
-              <Placeholder icon={Receipt} label="Recibos e Historico Financeiro" />
-            </div>
+            <PatientFinanceiro patient={patient} />
           )}
 
         </main>
       </div>
+    </div>
+  );
+};
+
+// ─── Aba Financeiro ──────────────────────────────────────────
+
+const fmt    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtPct = (v: number) => `${v.toFixed(1)}%`;
+
+const STATUS_STYLE: Record<string, string> = {
+  paid:      'bg-emerald-50 text-emerald-700 border-emerald-200',
+  pending:   'bg-amber-50 text-amber-700 border-amber-200',
+  refunded:  'bg-slate-100 text-slate-500 border-slate-200',
+  cancelled: 'bg-rose-50 text-rose-600 border-rose-200',
+};
+const STATUS_LABEL: Record<string, string> = {
+  paid: 'Pago', pending: 'Pendente', refunded: 'Estornado', cancelled: 'Cancelado',
+};
+
+const PatientFinanceiro: React.FC<{ patient: Patient }> = ({ patient }) => {
+  const [payments, setPayments]       = useState<PaymentFull[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [showModal, setShowModal]     = useState(false);
+
+  const loadPayments = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('vw_payments_full')
+      .select('*')
+      .eq('patient_id', patient.id)
+      .order('payment_date', { ascending: false });
+    setPayments((data ?? []) as PaymentFull[]);
+    setLoading(false);
+  }, [patient.id]);
+
+  useEffect(() => { loadPayments(); }, [loadPayments]);
+
+  const totals = payments.reduce((acc, p) => {
+    if (p.status === 'paid') {
+      acc.paid        += p.amount ?? 0;
+      acc.profit      += p.real_profit ?? 0;
+      acc.commission  += p.commission_amount ?? 0;
+    }
+    if (p.status === 'pending') acc.pending += p.amount ?? 0;
+    return acc;
+  }, { paid: 0, pending: 0, profit: 0, commission: 0 });
+
+  return (
+    <div className="max-w-3xl mx-auto px-6 py-5 flex flex-col gap-5">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-slate-700">Histórico Financeiro</h2>
+          <p className="text-xs text-slate-400">{payments.length} transação{payments.length !== 1 ? 'ões' : ''} registrada{payments.length !== 1 ? 's' : ''}</p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white
+                     text-xs font-semibold rounded-xl px-3 py-2 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Registrar pagamento
+        </button>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+          <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide">Total pago</p>
+          <p className="text-base font-bold text-emerald-700 tabular-nums mt-0.5">{fmt(totals.paid)}</p>
+        </div>
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+          <p className="text-[10px] text-amber-600 font-semibold uppercase tracking-wide">Pendente</p>
+          <p className="text-base font-bold text-amber-700 tabular-nums mt-0.5">{fmt(totals.pending)}</p>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
+          <p className="text-[10px] text-indigo-600 font-semibold uppercase tracking-wide">Lucro clínica</p>
+          <p className="text-base font-bold text-indigo-700 tabular-nums mt-0.5">{fmt(totals.profit)}</p>
+        </div>
+        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
+          <p className="text-[10px] text-rose-600 font-semibold uppercase tracking-wide">Comissões</p>
+          <p className="text-base font-bold text-rose-700 tabular-nums mt-0.5">{fmt(totals.commission)}</p>
+        </div>
+      </div>
+
+      {/* Lista de pagamentos */}
+      {loading ? (
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-indigo-400 animate-spin" /></div>
+      ) : payments.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-14 gap-3 text-center">
+          <Receipt className="w-10 h-10 text-slate-200" />
+          <p className="text-sm text-slate-400">Nenhum pagamento registrado ainda.</p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="text-xs text-indigo-500 hover:text-indigo-700 font-semibold transition-colors"
+          >
+            Registrar primeiro pagamento →
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {payments.map(p => {
+            const margin = p.margin_pct ?? 0;
+            return (
+              <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                {/* Linha principal */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(p.amount)}</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_STYLE[p.status] ?? STATUS_STYLE.pending}`}>
+                        {STATUS_LABEL[p.status] ?? p.status}
+                      </span>
+                      <span className="text-[10px] text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
+                        {PAYMENT_METHOD_LABELS[p.payment_method] ?? p.payment_method}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {p.service_name ?? '—'}
+                      {p.payment_date && ` · ${new Date(p.payment_date).toLocaleDateString('pt-BR')}`}
+                    </p>
+                  </div>
+
+                  {/* Margem */}
+                  {p.status === 'paid' && (
+                    <div className={`text-xs font-bold tabular-nums px-2 py-1 rounded-lg ${
+                      margin >= 25 ? 'bg-emerald-50 text-emerald-700' :
+                      margin >= 0  ? 'bg-amber-50 text-amber-700' :
+                                     'bg-rose-50 text-rose-600'
+                    }`}>
+                      {fmtPct(margin)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Breakdown (só se tiver dados calculados) */}
+                {p.status === 'paid' && p.net_revenue != null && (
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pt-2 border-t border-slate-100">
+                    {[
+                      { label: 'Taxa',       value: -(p.payment_fee_amount ?? 0), color: 'text-rose-500' },
+                      { label: 'Imposto',    value: -(p.tax_amount ?? 0),         color: 'text-rose-500' },
+                      { label: 'Rec. líq.',  value:   p.net_revenue ?? 0,         color: 'text-amber-600' },
+                      { label: 'Comissão',   value: -(p.commission_amount ?? 0),  color: 'text-rose-500' },
+                      { label: 'Lucro',      value:   p.real_profit ?? 0,         color: p.real_profit! >= 0 ? 'text-emerald-600' : 'text-rose-500' },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="text-center">
+                        <p className="text-[10px] text-slate-400">{label}</p>
+                        <p className={`text-xs font-semibold tabular-nums ${color}`}>{fmt(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {p.pricing_source === 'default' && (
+                  <p className="text-[10px] text-amber-600">⚠ Valores estimados — serviço sem precificação cadastrada no BI.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal */}
+      {showModal && (
+        <PaymentRegisterModal
+          patient={patient}
+          onClose={() => setShowModal(false)}
+          onSuccess={loadPayments}
+        />
+      )}
     </div>
   );
 };

@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import {
   User, Briefcase, Building2, Shield, Clock,
   Plus, Pencil, Trash2, Check, X, Loader2, CheckCircle2, AlertCircle,
+  Wallet,
 } from 'lucide-react';
 import { Professional, ClinicService } from '../types';
 import { supabase } from '../services/supabaseClient';
 import AvatarUpload from './AvatarUpload';
+import FinancialSettings from './admin/FinancialSettings';
 
-type SettingsTab = 'profissionais' | 'servicos' | 'clinica' | 'usuarios';
+type SettingsTab = 'profissionais' | 'servicos' | 'clinica' | 'financeiro' | 'usuarios';
 type ProfTab = 'dados' | 'horarios';
 type Toast = { type: 'success' | 'error'; msg: string } | null;
 
@@ -190,6 +192,7 @@ const Settings: React.FC<Props> = ({
     { id: 'profissionais', label: 'Profissionais', Icon: User      },
     { id: 'servicos',      label: 'Servicos',      Icon: Briefcase },
     { id: 'clinica',       label: 'Clinica',       Icon: Building2 },
+    { id: 'financeiro',    label: 'Financeiro',    Icon: Wallet    },
     { id: 'usuarios',      label: 'Usuarios',      Icon: Shield    },
   ];
 
@@ -650,6 +653,13 @@ const Settings: React.FC<Props> = ({
               <Check className="w-4 h-4" /> Salvar (em breve)
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Financeiro */}
+      {tab === 'financeiro' && (
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <FinancialSettings />
         </div>
       )}
 

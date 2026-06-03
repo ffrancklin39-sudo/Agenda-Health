@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { supabase } from '../services/supabaseClient'; 
+import { supabase } from '../services/supabaseClient';
 import { Patient } from '../types';
 import { phoneMatchKey } from '../phoneUtils';
 import { Phone, MessageCircle, DollarSign, Check, UserPlus, BellRing, Bell, Edit2, Trash2, AlarmClock, AlignLeft, X, Stethoscope } from 'lucide-react';
+import PaymentRegisterModal from './admin/PaymentRegisterModal';
 
 // --- CONFIGURAÇÃO DAS COLUNAS ---
 const COLUMNS = {
@@ -32,6 +33,7 @@ const CRMi: React.FC<CRMiProps> = ({ onSelectPatient, patients: initialPatients,
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [pendingDrag, setPendingDrag] = useState<{ draggableId: string, source: any, destination: any } | null>(null);
+  const [paymentPatient, setPaymentPatient] = useState<Patient | null>(null);
 
   // Modais Comuns
   const [showAddModal, setShowAddModal] = useState(false);
@@ -257,7 +259,18 @@ const CRMi: React.FC<CRMiProps> = ({ onSelectPatient, patients: initialPatients,
     if (!pendingDrag) return;
     updateStatusInDB(pendingDrag.draggableId, 'confirmed', safeParseFloat(dealValue));
     setShowPaymentModal(false);
+    setPaymentPatient(null);
     setPendingDrag(null);
+  };
+
+  // Chamado pelo PaymentRegisterModal após salvar com sucesso
+  const handlePaymentSuccess = () => {
+    if (pendingDrag) {
+      updateStatusInDB(pendingDrag.draggableId, 'confirmed', safeParseFloat(dealValue) || paymentPatient?.price || 0);
+      setPendingDrag(null);
+    }
+    setShowPaymentModal(false);
+    setPaymentPatient(null);
   };
 
   const handleRefundDecision = (shouldRefund: boolean) => {
@@ -287,9 +300,10 @@ const CRMi: React.FC<CRMiProps> = ({ onSelectPatient, patients: initialPatients,
 
     if (newStatus === 'confirmed' && oldStatus !== 'confirmed') {
       setPendingDrag({ draggableId, source, destination });
-      setDealValue(''); 
+      setDealValue('');
+      setPaymentPatient(currentPatient ?? null);
       setShowPaymentModal(true);
-      return; 
+      return;
     }
 
     if (oldStatus === 'confirmed' && newStatus !== 'confirmed' && currentPrice > 0) {
@@ -456,38 +470,35 @@ const CRMi: React.FC<CRMiProps> = ({ onSelectPatient, patients: initialPatients,
       </div>
       
       {/* 💸 MODAL DE PAGAMENTO */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 z-100 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+      {showPaymentModal && paymentPatient && (
+        <PaymentRegisterModal
+          patient={paymentPatient}
+          onClose={() => { setShowPaymentModal(false); setPaymentPatient(null); setPendingDrag(null); }}
+          onSuccess={handlePaymentSuccess}
+        />
+      )}
+      {/* Fallback: modal simples se não tiver dados do paciente */}
+      {showPaymentModal && !paymentPatient && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold text-emerald-600 mb-2 flex items-center gap-2">
               <DollarSign size={20}/> Confirmar Fechamento
             </h3>
-            <p className="text-sm text-slate-500 font-medium mb-6">Qual foi o valor acordado/pago por este paciente?</p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Valor (R$)</label>
-                <input 
-                  type="text" 
-                  value={dealValue}
-                  onChange={(e) => setDealValue(e.target.value)}
-                  placeholder="Ex: 1500.00"
-                  className="w-full px-3 py-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-800"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button 
-                onClick={() => { setShowPaymentModal(false); setPendingDrag(null); }} 
-                className="flex-1 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-              >
+            <p className="text-sm text-slate-500 font-medium mb-4">Qual foi o valor acordado?</p>
+            <input
+              type="text"
+              value={dealValue}
+              onChange={(e) => setDealValue(e.target.value)}
+              placeholder="Ex: 1500.00"
+              className="w-full px-3 py-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-800 mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => { setShowPaymentModal(false); setPendingDrag(null); }}
+                className="flex-1 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
                 Cancelar
               </button>
-              <button 
-                onClick={confirmPayment} 
-                className="flex-1 py-2 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors"
-              >
+              <button onClick={confirmPayment}
+                className="flex-1 py-2 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors">
                 Confirmar
               </button>
             </div>
