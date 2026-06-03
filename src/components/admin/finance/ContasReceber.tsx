@@ -17,9 +17,7 @@ interface PendingPayment {
   created_at: string;
 }
 
-interface PatientFull extends Patient {
-  phone?: string;
-}
+type PatientFull = Patient;
 
 const fmt    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';

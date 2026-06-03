@@ -136,15 +136,15 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Fornecedor / Credor</label>
-            <input className={inputCls} value={form.supplier} onChange={e => set('supplier', e.target.value)} placeholder="Ex: Imobiliária Central" />
+            <input className={inputCls} value={form.supplier ?? ''} onChange={e => set('supplier', e.target.value)} placeholder="Ex: Imobiliária Central" />
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Nº Documento</label>
-            <input className={inputCls} value={form.document_number} onChange={e => set('document_number', e.target.value)} placeholder="NF, boleto, contrato..." />
+            <input className={inputCls} value={form.document_number ?? ''} onChange={e => set('document_number', e.target.value)} placeholder="NF, boleto, contrato..." />
           </div>
           <div className="col-span-2">
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Observações</label>
-            <textarea rows={2} className={inputCls + ' resize-none'} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Detalhes adicionais..." />
+            <textarea rows={2} className={inputCls + ' resize-none'} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} placeholder="Detalhes adicionais..." />
           </div>
 
           {error && (

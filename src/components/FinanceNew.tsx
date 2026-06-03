@@ -102,9 +102,9 @@ const FinanceNew: React.FC<FinanceNewProps> = ({ userRole }) => {
     },
     {
       name: 'Cartão',
-      count: filteredPayments.filter(p => p.payment_method === 'credit_card').length,
+      count: filteredPayments.filter(p => ['credit_1x','credit_2_6x','credit_7x_plus','debit'].includes(p.payment_method)).length,
       amount: filteredPayments
-        .filter(p => p.payment_method === 'credit_card' && p.status === 'paid')
+        .filter(p => ['credit_1x','credit_2_6x','credit_7x_plus','debit'].includes(p.payment_method) && p.status === 'paid')
         .reduce((sum, p) => sum + (p.amount || 0), 0),
     },
     {
@@ -269,7 +269,8 @@ const FinanceNew: React.FC<FinanceNewProps> = ({ userRole }) => {
                   </td>
                   <td className="px-6 py-3 text-sm text-slate-600">
                     {payment.payment_method === 'pix' && '💳 PIX'}
-                    {payment.payment_method === 'credit_card' && '💳 Cartão'}
+                    {['credit_1x','credit_2_6x','credit_7x_plus'].includes(payment.payment_method) && '💳 Crédito'}
+                    {payment.payment_method === 'debit' && '💳 Débito'}
                     {payment.payment_method === 'cash' && '💰 Dinheiro'}
                     {payment.payment_method === 'transfer' && '🏦 Transferência'}
                   </td>
@@ -305,7 +306,7 @@ const FinanceNew: React.FC<FinanceNewProps> = ({ userRole }) => {
           const totalRevenue = profPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
           const totalCommission = profPayments.reduce((sum, p) => sum + (p.commission_amount || 0), 0);
           const paidCommission = profPayments
-            .filter(p => p.commission_paid)
+            .filter(p => (p as any).commission_paid)
             .reduce((sum, p) => sum + (p.commission_amount || 0), 0);
           const pendingCommission = totalCommission - paidCommission;
 

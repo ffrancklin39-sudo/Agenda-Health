@@ -169,9 +169,10 @@ const DRE: React.FC<Props> = ({ onBack }) => {
       const totalFixedCost  = inRange.reduce((s, p) => s + (p.fixed_cost ?? 0), 0);
       const totalCommission = inRange.reduce((s, p) => s + (p.commission_amount ?? 0), 0);
       const netProfit    = inRange.reduce((s, p) => s + (p.real_profit ?? 0), 0);
+      const grossProfit  = netRevenue - totalFixedCost;
       const margin       = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
       const ticket       = count > 0 ? grossRevenue / count : 0;
-      return { count, grossRevenue, totalTax, totalPaymentFee, netRevenue, totalFixedCost, totalCommission, netProfit: netProfit, margin, ticket };
+      return { count, grossRevenue, totalTax, totalPaymentFee, netRevenue, totalFixedCost, totalCommission, grossProfit, netProfit, margin, ticket };
     }
 
     // ── Fonte 2: fallback patients (sem método de pagamento real) ──
