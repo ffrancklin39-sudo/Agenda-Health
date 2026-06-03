@@ -1,6 +1,8 @@
 # 🏥 SintesIA — Documentação do Projeto
 
-**Status:** Em desenvolvimento | **Prioridade:** Migração Feegow + Completar abas funcionais
+**Status:** Em desenvolvimento ativo
+**Última atualização:** 2026-06-03
+**Próxima prioridade:** CRM — melhorias e funcionalidades avançadas
 
 ---
 
@@ -8,22 +10,12 @@
 
 SintesIA é um **ecossistema autônomo de receita (RevOps)** para clínicas de saúde integrada, impulsionado por IA.
 
-### Componentes do Sistema
+### Stack
 - **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS
 - **Backend:** Supabase (auth + DB realtime)
 - **IA:** Google Genai (Gemini) + Groq (transcrição)
-- **Automações:** n8n + Sofia (SDR de IA)
+- **Automações:** n8n + Sofia (SDR de IA) — planejado
 - **Deploy:** Vercel + Supabase
-
-### Abas Principais
-1. **Dashboard** ✅ (funcional)
-2. **CRM (Kanban)** ✅ (funcional - drag-drop, lembretes, pagamentos)
-3. **Pacientes** ✅ (funcional - lista com filtros)
-4. **Agenda** ⏳ (UI pronta, lógica faltando)
-5. **Automações** ⏳ (UI pronta, integração Sofia/n8n faltando)
-6. **Financeiro** ⏳ (UI pronta, cálculos faltando)
-7. **Serviços** ⚠️ (UI apenas, sem funcionalidade)
-8. **Configurações** ⚠️ (UI apenas)
 
 ---
 
@@ -32,303 +24,202 @@ SintesIA é um **ecossistema autônomo de receita (RevOps)** para clínicas de s
 ```
 SintesIA/
 ├── src/
-│   ├── components/           # Componentes React
-│   │   ├── Sidebar.tsx
-│   │   ├── App.tsx
-│   │   ├── Dashboard.tsx
-│   │   ├── CRMi.tsx         # Kanban de leads
-│   │   ├── PatientList.tsx
-│   │   ├── PatientProfile.tsx
-│   │   ├── Agenda.tsx        # Calendário (incompleto)
-│   │   ├── Automations.tsx
-│   │   ├── Finance.tsx       # DRE (incompleto)
-│   │   ├── ServicesCatalog.tsx
-│   │   ├── Settings.tsx
-│   │   └── Login.tsx         # Supabase Auth
+│   ├── components/
+│   │   ├── Sidebar.tsx           # Nav com grupos Operacional/Administrativo
+│   │   ├── App.tsx               # Roteamento principal
+│   │   ├── Dashboard.tsx         # ✅ Funcional
+│   │   ├── CRMi.tsx              # ✅ Kanban drag-drop, lembretes, PaymentModal
+│   │   ├── PatientList.tsx       # ✅ Lista com filtros
+│   │   ├── PatientProfile.tsx    # ✅ Perfil completo + aba Financeiro
+│   │   ├── Agenda.tsx            # ⏳ UI pronta, lógica incompleta
+│   │   ├── Automations.tsx       # ⏳ Planejado
+│   │   ├── Finance.tsx           # ✅ Reestruturado com 5 sub-abas
+│   │   ├── ServicesCatalog.tsx   # ⚠️ UI apenas
+│   │   ├── Settings.tsx          # ✅ Com aba Financeiro
+│   │   ├── Tasks.tsx             # ✅ Funcional
+│   │   └── Login.tsx             # ✅ Supabase Auth
+│   │
+│   ├── components/admin/
+│   │   ├── FinancialSettings.tsx      # Configurações fiscais globais
+│   │   ├── PaymentRegisterModal.tsx   # Modal de pagamento com cálculo automático
+│   │   ├── finance/
+│   │   │   ├── CaixaDiario.tsx        # Caixa do dia/semana/mês
+│   │   │   ├── Lancamentos.tsx        # Histórico unificado payments+bills
+│   │   │   ├── ContasPagar.tsx        # Gestão de despesas (bills)
+│   │   │   └── ContasReceber.tsx      # Pagamentos pendentes
+│   │   └── reports/
+│   │       ├── DRE.tsx
+│   │       ├── CommissionsReport.tsx
+│   │       ├── RevenueByService.tsx
+│   │       ├── Inadimplencia.tsx
+│   │       ├── PatientRetention.tsx
+│   │       ├── LTV.tsx
+│   │       ├── LeadOrigin.tsx
+│   │       ├── AgendaOccupancy.tsx
+│   │       ├── NoShow.tsx
+│   │       ├── MarginEvolution.tsx
+│   │       └── ChairEfficiency.tsx
+│   │
+│   ├── components/bi/
+│   │   ├── ProfitDashboard.tsx        # Ranking de lucratividade por procedimento
+│   │   └── ProcedurePricingForm.tsx   # Cadastro de precificação
+│   │
 │   ├── services/
-│   │   └── supabaseClient.ts # Inicialização Supabase
-│   ├── types.ts              # TypeScript interfaces
-│   ├── constants.tsx         # Configurações globais
-│   ├── phoneUtils.ts         # Helpers de telefone
-│   ├── index.css             # Estilos globais
-│   ├── main.tsx              # Entrypoint React
-│   └── vite-env.d.ts         # Tipos do Vite
-├── .env.local                # Credenciais Supabase (local)
-├── .env.example
-├── index.html                # HTML root
-├── vite.config.ts
-├── tsconfig.json
-├── package.json
-└── README.md
+│   │   └── supabaseClient.ts
+│   ├── types.ts              # Todas as interfaces TypeScript
+│   ├── constants.tsx
+│   ├── phoneUtils.ts
+│   └── main.tsx
+│
+├── sql/                      # Scripts SQL para o Supabase
+│   ├── bi_profitability.sql        # procedures_pricing + vw_procedure_profitability
+│   ├── seed_procedures_pricing.sql # Seed dos 30 serviços com price > 0
+│   ├── payments_and_triggers.sql   # payments + commission_ledger + triggers
+│   └── financial_core.sql         # bills + clinic_settings + vw_cash_flow
+│
+└── docs/
+    └── manual-financeiro-sintesia.md
 ```
 
 ---
 
-## 🗄️ Schema de Banco de Dados Esperado (Supabase)
+## 🗄️ Banco de Dados — Tabelas Existentes no Supabase
 
-### Tabela: `patients`
-```sql
-CREATE TABLE patients (
-  id UUID PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT,
-  phone TEXT,
-  cpf TEXT UNIQUE,
-  status TEXT DEFAULT 'lead', -- lead, negotiation, waiting, scheduled, confirmed, discarded
-  
-  -- Agendamento
-  appointment_date TIMESTAMP,
-  professional_id UUID,
-  service_id UUID,
-  
-  -- Financeiro
-  price DECIMAL(10, 2),
-  
-  -- Lembretes
-  reminder_date TIMESTAMP,
-  reminder_note TEXT,
-  reminder_executed BOOLEAN DEFAULT FALSE,
-  
-  -- Histórico & Observações
-  observation TEXT,
-  source TEXT, -- origem do lead (WhatsApp, Call, Indicação)
-  
-  -- Metadata
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-```
+### Tabelas principais (já criadas e funcionando)
 
-### Tabela: `appointments` (faltando)
-```sql
-CREATE TABLE appointments (
-  id UUID PRIMARY KEY,
-  patient_id UUID REFERENCES patients(id),
-  professional_id UUID REFERENCES professionals(id),
-  service_id UUID REFERENCES services(id),
-  
-  date_time TIMESTAMP NOT NULL,
-  duration_minutes INTEGER, -- 30, 45, 60, 90
-  status TEXT DEFAULT 'scheduled', -- scheduled, confirmed, completed, cancelled
-  notes TEXT,
-  
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-```
+| Tabela | Status | Descrição |
+|--------|--------|-----------|
+| `patients` | ✅ | Pacientes/leads com todos os campos clínicos |
+| `professionals` | ✅ | Profissionais com agenda e comissão |
+| `services` | ✅ | Catálogo de serviços/procedimentos |
+| `appointments` | ✅ | Agendamentos vinculados a paciente+profissional+serviço |
+| `payments` | ✅ | Pagamentos reais com cálculo automático via trigger |
+| `commission_ledger` | ✅ | Comissões geradas automaticamente |
+| `procedures_pricing` | ✅ | Precificação por serviço (custo, imposto, comissão, taxas) |
+| `bills` | ✅ | Contas a pagar (despesas fixas e avulsas) |
+| `clinic_settings` | ✅ | Configurações globais da clínica (chave/valor) |
 
-### Tabela: `payments` (faltando)
-```sql
-CREATE TABLE payments (
-  id UUID PRIMARY KEY,
-  patient_id UUID REFERENCES patients(id),
-  appointment_id UUID REFERENCES appointments(id),
-  
-  amount DECIMAL(10, 2) NOT NULL,
-  status TEXT DEFAULT 'pending', -- pending, paid, refunded
-  payment_method TEXT, -- pix, credit_card, cash
-  payment_date TIMESTAMP,
-  
-  professional_id UUID REFERENCES professionals(id),
-  commission_percentage DECIMAL(5, 2),
-  
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-```
+### Views (geradas automaticamente)
 
-### Tabela: `patient_history` (faltando)
-```sql
-CREATE TABLE patient_history (
-  id UUID PRIMARY KEY,
-  patient_id UUID REFERENCES patients(id),
-  
-  date TIMESTAMP DEFAULT NOW(),
-  event_type TEXT, -- consultation, procedure, payment, follow_up
-  notes TEXT,
-  created_by TEXT, -- usuário que criou
-  
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
+| View | Descrição |
+|------|-----------|
+| `vw_procedure_profitability` | Ranking de procedimentos por margem real |
+| `vw_payments_full` | Payments enriquecido com nomes de paciente/profissional/serviço |
+| `vw_cash_flow` | União de payments (entradas) + bills (saídas) |
+| `vw_monthly_balance` | Saldo mensal automático |
+| `vw_bills_upcoming` | Contas vencendo nos próximos 30 dias |
+| `vw_commission_summary` | Resumo de comissões por profissional e mês |
+| `vw_dre_monthly` | DRE mensal automático |
+| `vw_revenue_by_service` | Receita e margem por serviço |
 
-### Tabela: `professionals` (parcial)
-```sql
-CREATE TABLE professionals (
-  id UUID PRIMARY KEY,
-  name TEXT NOT NULL,
-  specialty TEXT,
-  color TEXT, -- para UI (blue, purple, emerald)
-  email TEXT,
-  phone TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-### Tabela: `services`
-```sql
-CREATE TABLE services (
-  id UUID PRIMARY KEY,
-  name TEXT NOT NULL,
-  price DECIMAL(10, 2),
-  duration_minutes INTEGER,
-  category TEXT, -- Consultas, Procedimentos, Estética
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
+### Triggers automáticos em `payments`
+- `trg_auto_calculate_payment` — calcula taxa, imposto, comissão e lucro real ao inserir
+- `trg_create_commission_on_insert` — cria entrada no commission_ledger quando status = 'paid'
+- `trg_create_commission_entry` — atualiza commission_ledger quando status muda
 
 ---
 
-## 🔄 Roadmap de Implementação
+## 📱 Status das Abas
 
-### Fase 1: Estrutura Base ✅ (FAZENDO)
-- [x] Reorganizar projeto (src/, components/, services/)
-- [x] Criar supabaseClient.ts
-- [ ] Solicitar anon_key correta
-- [ ] Validar conexão com Supabase
-- [ ] Documentar schema final
+### Sidebar — Grupo OPERACIONAL
+| Aba | Status | Observações |
+|-----|--------|-------------|
+| Dashboard | ✅ | KPIs, funil, métricas |
+| Agenda | ⏳ | UI pronta, lógica de criação/edição incompleta |
+| CRMi | ✅ | Kanban drag-drop, PaymentModal ao confirmar |
+| Pacientes | ✅ | Lista, filtros, perfil completo |
+| Tarefas | ✅ | Funcional |
+| Automações | ⏳ | UI apenas |
+| Serviços | ⚠️ | UI apenas |
 
-### Fase 2: Migração Feegow 📋
-- [ ] Explorar dados/API do Feegow
-- [ ] Criar scripts de ETL (Python/Node)
-- [ ] Mapear campos Feegow → SintesIA
-- [ ] Importar dados em lotes (com rollback)
-- [ ] Validar integridade dos dados
-
-### Fase 3: Completar Abas 🔨
-- [ ] **Agenda:** Criar/editar/deletar agendamentos
-- [ ] **Agenda:** Calendário com visualização diário/semanal/mensal
-- [ ] **Financeiro:** Dashboard de receita
-- [ ] **Financeiro:** Lista de recebimentos
-- [ ] **Financeiro:** Cálculo de comissões
-- [ ] **Automações:** Integração com Sofia/n8n
-
-### Fase 4: Integrações Avançadas 🚀
-- [ ] Sofia (SDR de IA) → Criar leads automaticamente
-- [ ] n8n → Orquestração de workflows
-- [ ] WhatsApp → Comunicação com pacientes
-- [ ] Lembretes automáticos → SMS/Email
-- [ ] Relatórios → Email semanal/mensal
+### Sidebar — Grupo ADMINISTRATIVO
+| Aba | Status | Observações |
+|-----|--------|-------------|
+| Financeiro | ✅ | 5 sub-abas: Visão Geral, Caixa, Lançamentos, Contas a Pagar, Contas a Receber |
+| BI & Margem | ✅ | ProfitDashboard + ProcedurePricingForm |
+| Relatórios | ✅ | 11 relatórios implementados com filtros e exportação CSV |
+| Configurações | ✅ | Profissionais, Serviços, Clínica, Financeiro, Usuários |
 
 ---
 
-## 🔐 Credenciais & Variáveis de Ambiente
+## 💳 Fluxo de Pagamento
 
-### `.env.local`
+1. Paciente confirmado no CRM → `PaymentRegisterModal` abre automaticamente
+2. Gestora informa: valor real, método de pagamento, data
+3. Trigger do Postgres calcula automaticamente: taxa, ISS, comissão, lucro
+4. `commission_ledger` é populado automaticamente
+5. `vw_cash_flow`, DRE e relatórios se atualizam em tempo real
+
+---
+
+## 🔢 Tipos de Pagamento (PaymentMethodFull)
+```typescript
+type PaymentMethodFull = 'pix' | 'debit' | 'credit_1x' | 'credit_2_6x' | 'credit_7x_plus' | 'cash' | 'transfer' | 'check';
+```
+⚠️ `'credit_card'` NÃO existe mais — foi substituído pelos tipos acima.
+
+---
+
+## 📊 O que o Módulo Financeiro faz automaticamente
+- Calcula imposto, taxa da maquininha e comissão a cada pagamento
+- Gera próximas ocorrências de contas recorrentes (bills)
+- Marca bills como `overdue` automaticamente
+- Atualiza caixa, lançamentos e relatórios em tempo real
+- Sinaliza pacientes atendidos sem pagamento registrado
+
+---
+
+## 🚧 Pendências Conhecidas do Módulo Financeiro
+(em ordem de prioridade — próximas sessões)
+
+1. Pagamento parcelado do paciente (installments)
+2. Pagamento parcial / saldo devedor
+3. Tela de pagamento de comissões aos profissionais
+4. Juros e multa em contas vencidas
+5. Conta bancária vinculada por transação
+6. Caixa pequeno (lançamento rápido)
+7. Projeção de fluxo de caixa 30/60/90 dias
+8. Competência vs caixa no DRE
+9. Convênios/planos de saúde (projeto separado)
+10. Fechamento de período contábil
+
+---
+
+## 🔐 Credenciais
+
 ```
 VITE_SUPABASE_URL=https://iudghjdmfcxjcpspeify.supabase.co
-VITE_SUPABASE_ANON_KEY=seu_anon_key_aqui
+VITE_SUPABASE_ANON_KEY=[ver .env.local]
 ```
-
-**⚠️ NUNCA commit `.env.local`** — está no `.gitignore`
+⚠️ NUNCA commitar `.env.local`
 
 ---
 
 ## 🚀 Como Rodar Localmente
 
 ```bash
-# Instalar dependências
 npm install
-
-# Rodar em desenvolvimento (porta 3000)
-npm run dev
-
-# Build para produção
-npm run build
-
-# Preview do build
-npm run preview
-
-# Lint/Type-check
-npm run lint
+npm run dev      # porta 5173
+npm run build    # build produção
 ```
 
 ---
 
-## 📊 Tipos de Dados Principais
+## 🔗 Integrações
 
-### Patient (paciente/lead)
-```typescript
-interface Patient {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  status: 'lead' | 'negotiation' | 'waiting' | 'scheduled' | 'confirmed' | 'discarded';
-  appointmentDate?: string;
-  price?: number;
-  reminderDate?: string;
-  reminderNote?: string;
-  history?: any[];
-  attachments?: any[];
-  created_at?: string;
-}
-```
-
-### Appointment (agendamento)
-```typescript
-interface Appointment {
-  id: string;
-  patient_id: string;
-  professional_id: string;
-  service_id: string;
-  date_time: string; // ISO 8601
-  duration_minutes: number;
-  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
-  notes?: string;
-}
-```
-
-### Payment (pagamento)
-```typescript
-interface Payment {
-  id: string;
-  patient_id: string;
-  appointment_id?: string;
-  amount: number;
-  status: 'pending' | 'paid' | 'refunded';
-  payment_method: 'pix' | 'credit_card' | 'cash';
-  payment_date?: string;
-  professional_id?: string;
-  commission_percentage?: number;
-}
-```
-
----
-
-## 🔗 Integrações Planejadas
-
-| Sistema | Status | Responsabilidade |
-|---------|--------|------------------|
-| **Supabase** | ✅ Setup | Auth + DB realtime |
-| **Google Genai** | ✅ Instalado | IA para insights |
-| **Groq** | ✅ Instalado | Transcrição de áudio |
-| **n8n** | 📋 Planejado | Automações de workflow |
-| **Sofia (SDR)** | 📋 Planejado | Atendimento automático |
-| **WhatsApp API** | 📋 Pendente | Comunicação |
-| **Stripe/PagSeguro** | 📋 Pendente | Pagamentos |
-| **Feegow** | 📋 Em migração | Importação de dados |
-
----
-
-## 📝 Checklist Antes de Produção
-
-- [ ] Anon_key do Supabase validada
-- [ ] Schema de DB criado e testado
-- [ ] Migração de dados Feegow completada
-- [ ] Agenda totalmente funcional
-- [ ] Financeiro com cálculos corretos
-- [ ] Autenticação (login) testada
-- [ ] Permissions no Supabase configuradas
-- [ ] RLS (Row Level Security) implementado
-- [ ] Deploy Vercel validado
-- [ ] Backup de dados Feegow
-- [ ] Testes de desempenho (Lighthouse)
-- [ ] Documentação de usuário
+| Sistema | Status |
+|---------|--------|
+| Supabase | ✅ Auth + DB + Realtime |
+| Vercel | ✅ Deploy automático via GitHub |
+| Google Genai | ✅ Instalado |
+| Groq | ✅ Instalado |
+| n8n | 📋 Planejado |
+| Sofia (SDR) | 📋 Planejado |
+| WhatsApp API | 📋 Pendente |
+| Feegow | ✅ Dados migrados (backup em pasta separada) |
 
 ---
 
 ## 👤 Owner: Francklin
 **Contato:** ffrancklin.39@gmail.com
 **Empresa:** Clínica de Saúde Integrada (esposa)
-**Última atualização:** 2026-05-19
