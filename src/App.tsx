@@ -362,7 +362,7 @@ const App: React.FC = () => {
               ) : (
                 <>
                   {activeTab === 'dashboard'   && <Dashboard patients={patients} dueReminders={dueReminders} />}
-                  {activeTab === 'kanban'       && <CRMi onSelectPatient={handlePatientSelect} patients={patients} onRefresh={fetchPatients} onSaveReminder={saveReminder} onUpdatePatient={updatePatient} session={session} />}
+                  {activeTab === 'kanban'       && <CRMi onSelectPatient={handlePatientSelect} patients={patients} onRefresh={fetchPatients} onSaveReminder={saveReminder} onUpdatePatient={updatePatient} session={session} professionals={professionals} />}
                   {activeTab === 'patients'     && <PatientList patients={patients} updateStatus={updatePatientStatus} onSelectPatient={handlePatientSelect} onRefresh={fetchPatients} session={session} initialSearch={globalSearch} />}
                   {activeTab === 'agenda'       && <Agenda patients={patients} professionals={professionals} services={services} onSelectPatient={handlePatientSelect} onRefresh={fetchPatients} refreshTrigger={agendaRefreshTrigger} />}
                   {activeTab === 'automations'  && <Automations patients={patients} />}

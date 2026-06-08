@@ -70,6 +70,29 @@
   @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
 }
 
+/* Scrollbar horizontal do Kanban — mais visível no desktop com mouse */
+.crm-hscroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.crm-hscroll::-webkit-scrollbar {
+  height: 8px;
+}
+.crm-hscroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 99px;
+}
+.crm-hscroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.crm-hscroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: content-box;
+}
+
 .glass-card {
   @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-sm;
 }

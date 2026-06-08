@@ -42,6 +42,8 @@ export interface Patient {
   record_number?: string;
   priority?: string;
   alerts?: string;
+  /** Profissional/atendente responsável por este lead no funil (id de `professionals`) */
+  assigned_to?: string;
 
   // Contatos extras
   phone2?: string;
@@ -97,6 +99,7 @@ export interface Patient {
   // Metadata
   created_at?: string;
   updated_at?: string;
+  stage_entered_at?: string;
 }
 
 export interface Professional {
@@ -147,6 +150,8 @@ export interface Appointment {
   notes?: string;
   series_id?: string;
   session_number?: number;
+  /** Agrupa múltiplos procedimentos do mesmo atendimento/visita (ex.: limpeza de pele + criolipólise na mesma sessão) */
+  group_id?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -257,8 +262,10 @@ export interface CommissionSummary {
 export interface PatientHistory {
   id: string;
   patient_id: string;
-  event_type: 'consultation' | 'procedure' | 'payment' | 'follow_up' | 'note' | 'status_change';
+  event_type: 'consultation' | 'procedure' | 'payment' | 'follow_up' | 'note' | 'status_change' | 'other';
   description?: string;
+  notes?: string;
+  date?: string;
   professional_id?: string;
   metadata?: Record<string, any>;
   created_by?: string;

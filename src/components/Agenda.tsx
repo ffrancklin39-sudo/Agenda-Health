@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock, ChevronLeft, ChevronRight, Calendar as CalIcon, Plus, X, Check,
-  Search, CheckCircle2, AlertCircle, Loader2, User, FileText,
+  Search, CheckCircle2, AlertCircle, Loader2, User, FileText, Phone,
 } from 'lucide-react';
 import { Patient, Professional, ClinicService, Appointment } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -33,7 +33,7 @@ const DEFAULT_COLOR = { bg: '#eef8f8', border: '#0b6873', text: '#123451', dot: 
 const getProfColor  = (color: string) => PROF_COLORS[color] || DEFAULT_COLOR;
 
 // ─── Time constants ──────────────────────────────────────────────────────────
-const START_HOUR   = 7;
+const START_HOUR   = 9;
 const END_HOUR     = 20;
 const HOUR_HEIGHT  = 60;          // px per hour
 const SNAP_MIN     = 15;          // drag snaps to 15-min intervals
@@ -117,6 +117,29 @@ const Agenda: React.FC<Props> = ({
   const [formDuration, setFormDuration]   = useState('01:00');
   const [formServiceId, setFormServiceId] = useState('');
   const [formProfId, setFormProfId]       = useState('');
+
+  // ── Múltiplos procedimentos no mesmo atendimento (ex.: limpeza + criolipólise) ──
+  interface ProcedureRow { uid: string; serviceId: string; duration: string; }
+  const procUidSeq = useRef(0);
+  const newProcRow = (serviceId = ''): ProcedureRow => {
+    procUidSeq.current += 1;
+    const svc = services.find(s => s.id === serviceId);
+    const dur = svc ? `${String(Math.floor(svc.duration / 60)).padStart(2, '0')}:${String(svc.duration % 60).padStart(2, '0')}` : '01:00';
+    return { uid: `p${procUidSeq.current}`, serviceId, duration: dur };
+  };
+  const [formProcedures, setFormProcedures] = useState<ProcedureRow[]>([]);
+  const [formNotes, setFormNotes] = useState(''); // observação livre do agendamento (ex.: "Retorno PROBIOME")
+  const addProcedureRow = () => setFormProcedures(prev => [...prev, newProcRow(services[0]?.id || '')]);
+  const removeProcedureRow = (uid: string) => setFormProcedures(prev => prev.length > 1 ? prev.filter(p => p.uid !== uid) : prev);
+  const updateProcedureService = (uid: string, serviceId: string) => setFormProcedures(prev => prev.map(p => {
+    if (p.uid !== uid) return p;
+    const svc = services.find(s => s.id === serviceId);
+    const dur = svc ? `${String(Math.floor(svc.duration / 60)).padStart(2, '0')}:${String(svc.duration % 60).padStart(2, '0')}` : p.duration;
+    return { ...p, serviceId, duration: dur };
+  }));
+  const updateProcedureDuration = (uid: string, duration: string) => setFormProcedures(prev => prev.map(p => p.uid === uid ? { ...p, duration } : p));
+  const procDurationToMin = (d: string) => { const [h, m] = d.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  const totalProceduresMin = formProcedures.reduce((sum, p) => sum + (procDurationToMin(p.duration) || 0), 0);
   const [patientQuery, setPatientQuery]   = useState('');
   const [selPatient, setSelPatient]       = useState<Patient | null>(null);
   const [showDrop, setShowDrop]           = useState(false);
@@ -124,21 +147,81 @@ const Agenda: React.FC<Props> = ({
 
   // ── Recorrência (pacotes) ──
   const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const [useRecurrence, setUseRecurrence]     = useState(false);
-  const [recDays, setRecDays]                 = useState<number[]>([]); // dias da semana 0=Dom
-  const [recSessions, setRecSessions]         = useState(10);
-  const [recPreview, setRecPreview]           = useState<string[]>([]);
-  const [showRecPreview, setShowRecPreview]   = useState(false);
+  type RecFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
+  const REC_FREQUENCY_LABELS: Record<RecFrequency, string> = {
+    daily:    'Diário',
+    weekly:   'Semanal',
+    biweekly: 'Quinzenal',
+    monthly:  'Mensal',
+    custom:   'Personalizado',
+  };
+  const [useRecurrence, setUseRecurrence]       = useState(false);
+  const [recFrequency, setRecFrequency]         = useState<RecFrequency>('weekly');
+  const [recDays, setRecDays]                   = useState<number[]>([]); // dias da semana 0=Dom (apenas frequência semanal)
+  const [recCustomInterval, setRecCustomInterval] = useState(7); // intervalo em dias (apenas frequência personalizada)
+  const [recSessions, setRecSessions]           = useState(10);
+  const [recPreview, setRecPreview]             = useState<string[]>([]);
+  const [showRecPreview, setShowRecPreview]     = useState(false);
 
-  const generateRecurrenceDates = (startDate: string, days: number[], sessions: number): string[] => {
-    if (!startDate || days.length === 0 || sessions <= 0) return [];
+  // ── Término da recorrência: "Após N ocorrências" ou "Em uma data" ──
+  // (espelha o padrão do Feegow, que deixa explícito quando a série termina)
+  type RecEndMode = 'count' | 'date';
+  const [recEndMode, setRecEndMode] = useState<RecEndMode>('count');
+  const [recEndDate, setRecEndDate] = useState('');
+  // Limite de segurança ao gerar por data-fim (cada sessão vira uma linha real em
+  // `appointments`, então não há "recorrência infinita" — cobrimos até a data
+  // escolhida, respeitando este teto para não criar centenas de linhas por engano)
+  const REC_MAX_SESSIONS_BY_DATE = 120;
+
+  /** Gera as datas de uma recorrência conforme a frequência escolhida.
+   *  - diário/quinzenal/personalizado: intervalo fixo de dias a partir da data inicial
+   *  - semanal: repete nos dias da semana selecionados
+   *  - mensal: repete no mesmo dia do mês (ajusta overflow para o último dia do mês quando necessário) */
+  const generateRecurrenceDates = (
+    startDate: string,
+    frequency: RecFrequency,
+    sessions: number,
+    opts: { days?: number[]; customInterval?: number; untilDate?: string } = {}
+  ): string[] => {
+    if (!startDate || sessions <= 0) return [];
+    const base  = new Date(startDate + 'T12:00');
     const dates: string[] = [];
-    const cur = new Date(startDate + 'T12:00');
-    // inclui a data de início se for um dos dias selecionados
-    while (dates.length < sessions) {
-      if (days.includes(cur.getDay())) dates.push(cur.toISOString().slice(0, 10));
-      cur.setDate(cur.getDate() + 1);
-      if (dates.length >= sessions) break;
+    const until = opts.untilDate || null; // quando informado, encerra a geração ao ultrapassar essa data
+
+    if (frequency === 'weekly') {
+      const days = opts.days || [];
+      if (days.length === 0) return [];
+      const cur = new Date(base);
+      let safety = 0;
+      while (dates.length < sessions && safety < 3000) {
+        if (days.includes(cur.getDay())) {
+          const ds = cur.toISOString().slice(0, 10);
+          if (until && ds > until) break;
+          dates.push(ds);
+        }
+        cur.setDate(cur.getDate() + 1);
+        safety++;
+      }
+      return dates;
+    }
+
+    const stepDays =
+      frequency === 'daily'    ? 1 :
+      frequency === 'biweekly' ? 14 :
+      frequency === 'custom'   ? Math.max(1, opts.customInterval || 1) :
+      null; // mensal usa intervalo de meses, não de dias
+
+    for (let i = 0; i < sessions; i++) {
+      const d = new Date(base);
+      if (frequency === 'monthly') {
+        d.setMonth(d.getMonth() + i);
+        if (d.getDate() !== base.getDate()) d.setDate(0); // overflow (ex.: 31/jan + 1 mês -> último dia de fevereiro)
+      } else {
+        d.setDate(d.getDate() + i * (stepDays || 1));
+      }
+      const ds = d.toISOString().slice(0, 10);
+      if (until && ds > until) break;
+      dates.push(ds);
     }
     return dates;
   };
@@ -146,6 +229,21 @@ const Agenda: React.FC<Props> = ({
   const toggleRecDay = (day: number) => {
     setRecDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
   };
+
+  /** A recorrência está pronta para gerar datas?
+   *  - semanal exige ≥1 dia da semana selecionado
+   *  - término por contagem exige nº de sessões > 0; término por data exige uma data escolhida */
+  const recurrenceReady =
+    (recFrequency !== 'weekly' || recDays.length > 0) &&
+    (recEndMode === 'count' ? recSessions > 0 : !!recEndDate);
+
+  /** Resolve os parâmetros de geração conforme o modo de término escolhido:
+   *  - 'count'  → gera exatamente N sessões a partir da data inicial
+   *  - 'date'   → gera sessões até (e incluindo) a data-fim, respeitando um teto de segurança */
+  const resolveRecurrenceParams = () =>
+    recEndMode === 'date'
+      ? { sessions: REC_MAX_SESSIONS_BY_DATE, untilDate: recEndDate }
+      : { sessions: recSessions, untilDate: undefined as string | undefined };
 
   // ── Appointments (próprio state — não usa patients como fonte) ──
   const [appointments, setAppointments]   = useState<Appointment[]>([]);
@@ -228,6 +326,7 @@ const Agenda: React.FC<Props> = ({
           updated_at:       a.updated_at,
           series_id:        a.series_id || undefined,
           session_number:   a.session_number || undefined,
+          group_id:         a.group_id || undefined,
         }))
       );
     } catch (err) {
@@ -270,11 +369,36 @@ const Agenda: React.FC<Props> = ({
   const [editServiceId, setEditServiceId] = useState('');
   const [editProfId, setEditProfId]       = useState('');
   const [editStatus, setEditStatus]       = useState('scheduled');
+  const [editNotes, setEditNotes]         = useState('');
 
   // ── Drag state ──
   const [dragPreview, setDragPreview]     = useState<DragPreview | null>(null);
   const dragPreviewRef                    = useRef<DragPreview | null>(null);   // mirror for closures
   const didDragRef                        = useRef(false);
+
+  // ── Hover do card: popover com dados rápidos do paciente (telefone, idade, alertas/observação) ──
+  const [hoverCard, setHoverCard] = useState<{ aptId: string; x: number; y: number } | null>(null);
+  const hoverTimerRef             = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Esconde o popover assim que um drag/resize começa (evita sobrepor o card sendo arrastado)
+  useEffect(() => {
+    if (dragPreview) {
+      if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+      setHoverCard(null);
+    }
+  }, [dragPreview]);
+
+  /** Calcula a idade a partir de birth_date / date_of_birth do paciente */
+  const calcPatientAge = (p: Patient | null | undefined): number | null => {
+    const raw = p?.birth_date || p?.date_of_birth;
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return null;
+    const today = new Date();
+    let a = today.getFullYear() - d.getFullYear();
+    if (today.getMonth() < d.getMonth() || (today.getMonth() === d.getMonth() && today.getDate() < d.getDate())) a--;
+    return a >= 0 ? a : null;
+  };
 
   // refs
   const gridRef     = useRef<HTMLDivElement>(null);
@@ -329,6 +453,8 @@ const Agenda: React.FC<Props> = ({
     setFormDuration('01:00');
     setFormServiceId(services[0]?.id || '');
     setFormProfId(professionals[0]?.id || '');
+    setFormProcedures([newProcRow(services[0]?.id || '')]);
+    setFormNotes('');
     setPatientQuery('');
     setSelPatient(null);
     setShowDrop(false);
@@ -349,6 +475,7 @@ const Agenda: React.FC<Props> = ({
     setEditServiceId(apt.service_id || '');
     setEditProfId(apt.professional_id || '');
     setEditStatus(apt.status || 'scheduled');
+    setEditNotes(apt.notes || '');
   };
 
   const handleEditSave = async () => {
@@ -382,6 +509,7 @@ const Agenda: React.FC<Props> = ({
         date_time:        `${editDate}T${editTime}:00`,
         duration_minutes: dur,
         status:           editStatus,
+        notes:            editNotes.trim() || null,
       };
       if (editProfId)    updates.professional_id = editProfId;
       if (editServiceId) updates.service_id       = editServiceId;
@@ -487,12 +615,16 @@ const Agenda: React.FC<Props> = ({
     }
     if (!formDate || !formTime) { setToast({ type: 'error', msg: 'Informe data e horário.' }); return; }
 
-    // Valida bloqueio de agenda
-    if (formProfId) {
+    // Duração total do bloco (soma de todos os procedimentos, quando houver mais de um)
+    const blockDur = formProcedures.length > 0 ? (totalProceduresMin || 60) : (() => {
       const [dh, dm] = formDuration.split(':').map(Number);
-      const dur = (dh || 0) * 60 + (dm || 0) || 60;
+      return (dh || 0) * 60 + (dm || 0) || 60;
+    })();
+
+    // Valida bloqueio de agenda (considera o bloco inteiro, do início do 1º ao fim do último procedimento)
+    if (formProfId) {
       const aptStart = new Date(`${formDate}T${formTime}:00`).getTime();
-      const aptEnd   = aptStart + dur * 60000;
+      const aptEnd   = aptStart + blockDur * 60000;
       const conflict = blockedSlots.find(b => {
         if (b.professional_id !== formProfId) return false;
         const bStart = new Date(b.start_datetime).getTime();
@@ -508,18 +640,52 @@ const Agenda: React.FC<Props> = ({
 
     setSaving(true);
     try {
-      const [dh, dm] = formDuration.split(':').map(Number);
-      const dur = (dh || 0) * 60 + (dm || 0) || 60;
+      const firstProc   = formProcedures[0];
+      const firstDur    = firstProc ? (procDurationToMin(firstProc.duration) || 60) : (() => {
+        const [dh, dm] = formDuration.split(':').map(Number);
+        return (dh || 0) * 60 + (dm || 0) || 60;
+      })();
+      const firstSvcId  = firstProc?.serviceId || formServiceId || '';
 
-      if (useRecurrence && recDays.length > 0 && recSessions > 1) {
+      if (formProcedures.length > 1) {
+        // ── Modo múltiplos procedimentos: cada um vira um agendamento próprio,
+        //    agendados em sequência (um começa quando o anterior termina) e
+        //    vinculados pelo mesmo group_id — formam um único atendimento. ──
+        const groupId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+          ? crypto.randomUUID()
+          : `grp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const [sh, sm] = formTime.split(':').map(Number);
+        let cursorMin = (sh || 0) * 60 + (sm || 0);
+        const apts = formProcedures.map(proc => {
+          const durMin = procDurationToMin(proc.duration) || 60;
+          const startTime = minToTime(((cursorMin % (24 * 60)) + 24 * 60) % (24 * 60));
+          const row = {
+            patient_id:       patientId,
+            date_time:        `${formDate}T${startTime}:00`,
+            duration_minutes: durMin,
+            status:           'scheduled',
+            professional_id:  formProfId || null,
+            service_id:       proc.serviceId || null,
+            group_id:         groupId,
+            notes:            formNotes.trim() || null,
+          };
+          cursorMin += durMin;
+          return row;
+        });
+        const { error: aptErr } = await supabase.from('appointments').insert(apts);
+        if (aptErr) throw aptErr;
+        setToast({ type: 'success', msg: `${apts.length} procedimentos de ${selPatient.name} agendados em sequência!` });
+      } else if (useRecurrence && recurrenceReady && (recEndMode === 'date' || recSessions > 1)) {
         // ── Modo recorrência: cria série + múltiplos agendamentos ──
-        const dates = generateRecurrenceDates(formDate, recDays, recSessions);
+        const { sessions: recCap, untilDate: recUntil } = resolveRecurrenceParams();
+        const dates = generateRecurrenceDates(formDate, recFrequency, recCap, { days: recDays, customInterval: recCustomInterval, untilDate: recUntil });
         if (dates.length === 0) { setToast({ type: 'error', msg: 'Selecione pelo menos 1 dia da semana.' }); setSaving(false); return; }
+        if (dates.length === 1) { setToast({ type: 'error', msg: 'O período escolhido gera apenas 1 sessão — ajuste a data de término ou desative a recorrência.' }); setSaving(false); return; }
 
         // Cria a série
         const { data: seriesData, error: seriesErr } = await supabase
           .from('appointment_series')
-          .insert({ patient_id: patientId, professional_id: formProfId || null, service_id: formServiceId || null, total_sessions: dates.length })
+          .insert({ patient_id: patientId, professional_id: formProfId || null, service_id: firstSvcId || null, total_sessions: dates.length })
           .select('id').single();
         if (seriesErr) throw seriesErr;
         const seriesId = seriesData.id;
@@ -528,12 +694,13 @@ const Agenda: React.FC<Props> = ({
         const apts = dates.map((date, i) => ({
           patient_id:       patientId,
           date_time:        `${date}T${formTime}:00`,
-          duration_minutes: dur,
+          duration_minutes: firstDur,
           status:           'scheduled',
           professional_id:  formProfId || null,
-          service_id:       formServiceId || null,
+          service_id:       firstSvcId || null,
           series_id:        seriesId,
           session_number:   i + 1,
+          notes:            formNotes.trim() || null,
         }));
         const { error: aptErr } = await supabase.from('appointments').insert(apts);
         if (aptErr) throw aptErr;
@@ -543,11 +710,12 @@ const Agenda: React.FC<Props> = ({
         const newApt: Record<string, any> = {
           patient_id:       patientId,
           date_time:        `${formDate}T${formTime}:00`,
-          duration_minutes: dur,
+          duration_minutes: firstDur,
           status:           'scheduled',
+          notes:            formNotes.trim() || null,
         };
-        if (formProfId)    newApt.professional_id = formProfId;
-        if (formServiceId) newApt.service_id       = formServiceId;
+        if (formProfId) newApt.professional_id = formProfId;
+        if (firstSvcId) newApt.service_id       = firstSvcId;
         const { error } = await supabase.from('appointments').insert(newApt);
         if (error) throw error;
         setToast({ type: 'success', msg: `Agendamento de ${selPatient.name} salvo!` });
@@ -558,9 +726,15 @@ const Agenda: React.FC<Props> = ({
       await fetchAppointments();
       setShowQuickAdd(false);
       setNewPatPhone('');
+      setFormProcedures([]);
+      setFormNotes('');
       setUseRecurrence(false);
+      setRecFrequency('weekly');
       setRecDays([]);
+      setRecCustomInterval(7);
       setRecSessions(10);
+      setRecEndMode('count');
+      setRecEndDate('');
       setShowRecPreview(false);
       onRefresh();
     } catch (err: any) {
@@ -756,6 +930,41 @@ const Agenda: React.FC<Props> = ({
     return result;
   };
 
+  /** Agrupa visualmente os agendamentos que fazem parte do mesmo atendimento (mesmo group_id)
+   *  em um único "card virtual" que cobre o intervalo do 1º ao último procedimento — em vez de
+   *  empilhar um card por procedimento, o que confundia a leitura da agenda.
+   *  Enquanto o usuário está arrastando/redimensionando um dos procedimentos do grupo, mantemos
+   *  a renderização individual (para não atrapalhar o drag em andamento). */
+  const buildRenderUnits = (apts: Appointment[]): Appointment[] => {
+    const seen  = new Set<string>();
+    const units: Appointment[] = [];
+    for (const apt of apts) {
+      if (seen.has(apt.id)) continue;
+      if (apt.group_id) {
+        const siblings = apts.filter(a => a.group_id === apt.group_id).sort((a, b) => (a.date_time || '').localeCompare(b.date_time || ''));
+        if (siblings.length > 1) {
+          siblings.forEach(s => seen.add(s.id));
+          const beingDragged = !!dragPreview && siblings.some(s => s.id === dragPreview!.aptId);
+          if (beingDragged) {
+            siblings.forEach(s => units.push(s));
+          } else {
+            const first  = siblings[0];
+            const last   = siblings[siblings.length - 1];
+            const fStart = parseAptDate(first.date_time);
+            const lStart = parseAptDate(last.date_time);
+            const totalMin = (lStart.hours * 60 + lStart.minutes + (last.duration_minutes || 60))
+                           - (fStart.hours * 60 + fStart.minutes);
+            units.push({ ...first, duration_minutes: totalMin, __groupSiblings: siblings } as any);
+          }
+          continue;
+        }
+      }
+      seen.add(apt.id);
+      units.push(apt);
+    }
+    return units;
+  };
+
   // ─────────────────────────── AptCard ─────────────────────────────────────
   // Defined as a render function (not JSX component) to avoid remount issues.
   const renderCard = (
@@ -771,6 +980,22 @@ const Agenda: React.FC<Props> = ({
     const prof     = professionals.find(p => p.id === apt.professional_id);
     const patName  = (apt as any).patient_name || patients.find(p => p.id === apt.patient_id)?.name || 'Paciente';
     const colors   = getProfColor(prof?.color || 'blue');
+
+    // Card "virtual" mesclado — representa todos os procedimentos do mesmo atendimento
+    // (group_id) em um único bloco, em vez de empilhar um card por procedimento.
+    const groupSiblings = (apt as any).__groupSiblings as Appointment[] | undefined;
+    const groupServiceNames = groupSiblings
+      ? groupSiblings.map(s => services.find(sv => sv.id === s.service_id)?.name || 'Procedimento')
+      : null;
+
+    // Quando este agendamento faz parte de um atendimento com múltiplos procedimentos
+    // (mas está sendo exibido individualmente — ex.: durante um drag em andamento)
+    const groupInfo = (() => {
+      if (groupSiblings || !apt.group_id) return null;
+      const siblings = appointments.filter(a => a.group_id === apt.group_id).sort((a, b) => (a.date_time || '').localeCompare(b.date_time || ''));
+      if (siblings.length <= 1) return null;
+      return { index: siblings.findIndex(a => a.id === apt.id) + 1, total: siblings.length };
+    })();
 
     // Compute time range string "HH:MM – HH:MM"
     const parsedTime   = parseAptDate(apt.date_time);
@@ -837,10 +1062,26 @@ const Agenda: React.FC<Props> = ({
           boxShadow:    isDragging ? '0 8px 30px rgba(0,0,0,0.18)' : undefined,
         }}
         className={`${scale > 1 ? 'rounded-xl px-3 py-2' : 'rounded-lg px-2 py-1'} overflow-hidden hover:brightness-95 transition-colors duration-150 shadow-sm select-none group/card`}
+        onMouseEnter={e => {
+          // Ancora o popover na borda do card (não no cursor) — fixo durante o hover,
+          // sem reposicionar a cada pixel (evita o "piscar" por filter/overflow do card).
+          const rect = e.currentTarget.getBoundingClientRect();
+          if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+          hoverTimerRef.current = setTimeout(
+            () => setHoverCard({ aptId: apt.id, x: rect.right, y: rect.top }),
+            350
+          );
+        }}
+        onMouseLeave={() => {
+          if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+          setHoverCard(prev => (prev?.aptId === apt.id ? null : prev));
+        }}
         onMouseDown={e => {
           // Don't start move-drag from name or resize handle
           const tgt = e.target as HTMLElement;
           if (tgt.closest('[data-apt-name]') || tgt.closest('[data-apt-resize]')) return;
+          if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+          setHoverCard(null);
           startDrag('move', apt, e, scale, weekDays);
         }}
         onClick={e => {
@@ -855,6 +1096,21 @@ const Agenda: React.FC<Props> = ({
           {isDragging ? (
             <span className="font-black" style={{ color: colors.border }}>{liveTimeStr}</span>
           ) : liveTimeStr}
+          {groupInfo && (
+            <span
+              title={`Atendimento com ${groupInfo.total} procedimentos — este é o ${groupInfo.index}º`}
+              className={`ml-1 px-1 rounded font-black ${scale > 1 ? 'text-[9px]' : 'text-[7px]'}`}
+              style={{ background: colors.border, color: '#fff', opacity: 0.85 }}
+            >
+              {groupInfo.index}/{groupInfo.total}
+            </span>
+          )}
+          {apt.notes && apt.notes.trim() && (
+            <FileText
+              title={`Observação: ${apt.notes}`}
+              className={`ml-0.5 opacity-60 ${scale > 1 ? 'w-3 h-3' : 'w-2.5 h-2.5'}`}
+            />
+          )}
         </div>
 
         {/* Patient name — click opens profile */}
@@ -884,9 +1140,27 @@ const Agenda: React.FC<Props> = ({
               }
             </div>
             <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate`}>
-              {service?.name || 'Consulta'}{scale > 1 && prof ? ` · ${prof.name}` : ''}
+              {groupServiceNames ? groupServiceNames.join(' + ') : (service?.name || 'Consulta')}
+              {scale > 1 && prof ? ` · ${prof.name}` : ''}
             </p>
           </div>
+        )}
+
+        {/* Texto da observação — visível quando o card tem altura suficiente */}
+        {apt.notes && apt.notes.trim() && previewH > (scale > 1 ? 70 : 56) && (
+          <p className={`flex items-center gap-1 mt-0.5 ${scale > 1 ? 'text-[10px]' : 'text-[8px]'} font-medium opacity-60 italic truncate`}>
+            <FileText className={scale > 1 ? 'w-3 h-3 shrink-0' : 'w-2.5 h-2.5 shrink-0'} />
+            <span className="truncate">{apt.notes}</span>
+          </p>
+        )}
+        {groupServiceNames && (
+          <span
+            title={`Atendimento com ${groupServiceNames.length} procedimentos: ${groupServiceNames.join(', ')}`}
+            className={`absolute top-1.5 right-1.5 px-1 rounded font-black ${scale > 1 ? 'text-[9px]' : 'text-[7px]'}`}
+            style={{ background: colors.border, color: '#fff', opacity: 0.85 }}
+          >
+            {groupServiceNames.length}×
+          </span>
         )}
 
         {/* Resize handle (bottom edge) */}
@@ -900,6 +1174,7 @@ const Agenda: React.FC<Props> = ({
             <div className="w-8 h-0.5 rounded-full" style={{ background: colors.border, opacity: 0.5 }} />
           </div>
         )}
+
       </div>
     );
   };
@@ -1067,8 +1342,9 @@ const Agenda: React.FC<Props> = ({
                   {isToday && <TimeLine />}
 
                   {(() => {
-                    const colMap = computeColumns(dayApts);
-                    return dayApts.map(apt => {
+                    const renderUnits = buildRenderUnits(dayApts);
+                    const colMap = computeColumns(renderUnits);
+                    return renderUnits.map(apt => {
                       const parsed  = parseAptDate(apt.date_time);
                       const service = services.find(s => s.id === apt.service_id);
                       const { col, total } = colMap.get(apt.id) || { col: 0, total: 1 };
@@ -1182,8 +1458,9 @@ const Agenda: React.FC<Props> = ({
               ))}
               {isToday && <TimeLine scale={SCALE} />}
               {(() => {
-                const colMap = computeColumns(dayApts);
-                return dayApts.map(apt => {
+                const renderUnits = buildRenderUnits(dayApts);
+                const colMap = computeColumns(renderUnits);
+                return renderUnits.map(apt => {
                   const parsed  = parseAptDate(apt.date_time);
                   const service = services.find(s => s.id === apt.service_id);
                   const { col, total } = colMap.get(apt.id) || { col: 0, total: 1 };
@@ -1226,7 +1503,7 @@ const Agenda: React.FC<Props> = ({
           <div className="grid grid-cols-7 auto-rows-[110px] divide-x divide-y divide-slate-100">
             {cells.map((day, idx) => {
               const ds      = day ? `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : '';
-              const dayApts = day ? filtered.filter(a => a.date_time?.startsWith(ds)) : [];
+              const dayApts = day ? buildRenderUnits(filtered.filter(a => a.date_time?.startsWith(ds))) : [];
               const isToday = day ? new Date(year, month, day).toDateString() === today.toDateString() : false;
               return (
                 <div key={idx}
@@ -1430,6 +1707,12 @@ const Agenda: React.FC<Props> = ({
             {/* Conteúdo com scroll */}
             <div className="relative z-10 overflow-y-auto custom-scrollbar px-8 pb-8 flex-1">
               <form className="space-y-5" onSubmit={handleSubmit}>
+                {/* ── Divisor de seção: agrupa data, horário e paciente ── */}
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 shrink-0">Quando &amp; com quem</span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Data</label>
@@ -1520,42 +1803,88 @@ const Agenda: React.FC<Props> = ({
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Serviço</label>
-                    <select value={formServiceId} onChange={e => {
-                      setFormServiceId(e.target.value);
-                      const svc = services.find(s => s.id === e.target.value);
-                      if (svc) { const h = Math.floor(svc.duration / 60); const m = svc.duration % 60; setFormDuration(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`); }
-                    }} className="premium-input appearance-none">
-                      {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
-                    <select value={formProfId} onChange={e => setFormProfId(e.target.value)} className="premium-input appearance-none">
-                      {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
+                {/* ── Divisor de seção: separa "quando/quem" de "o que será feito" ── */}
+                <div className="flex items-center gap-2.5 pt-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 shrink-0">Atendimento</span>
+                  <div className="flex-1 h-px bg-slate-100" />
                 </div>
+
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Duração do Atendimento</label>
-                  <input type="time" value={formDuration} onChange={e => setFormDuration(e.target.value)} min="00:15" className="premium-input" />
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
+                  <select value={formProfId} onChange={e => setFormProfId(e.target.value)} className="premium-input appearance-none">
+                    {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
                 </div>
-                {formTime && formDuration && (() => {
+
+                {/* ── Procedimentos (suporta múltiplos no mesmo atendimento) ── */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between ml-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                      {formProcedures.length > 1 ? 'Procedimentos' : 'Procedimento'}
+                    </label>
+                    <button type="button" onClick={addProcedureRow}
+                      className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-wider">
+                      <Plus className="w-3 h-3" /> Adicionar procedimento
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {formProcedures.map((proc) => (
+                      <div key={proc.uid} className="flex items-center gap-2">
+                        <select value={proc.serviceId} onChange={e => updateProcedureService(proc.uid, e.target.value)}
+                          className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-100 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-medium appearance-none">
+                          <option value="">Selecione...</option>
+                          {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <input type="time" value={proc.duration} onChange={e => updateProcedureDuration(proc.uid, e.target.value)}
+                          min="00:15"
+                          className="w-24 shrink-0 px-2.5 py-2.5 bg-white border border-slate-100 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-medium" />
+                        {formProcedures.length > 1 && (
+                          <button type="button" onClick={() => removeProcedureRow(proc.uid)}
+                            className="w-9 h-9 shrink-0 flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors">
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {formTime && totalProceduresMin > 0 && (() => {
                   const [sh, sm] = formTime.split(':').map(Number);
-                  const [dh, dm] = formDuration.split(':').map(Number);
-                  const totalMin = (sh||0)*60 + (sm||0) + (dh||0)*60 + (dm||0);
+                  const totalMin = (sh||0)*60 + (sm||0) + totalProceduresMin;
                   const endH = Math.floor(totalMin / 60) % 24; const endM = totalMin % 60;
-                  const durLabel = (dh||0) > 0 ? ((dm||0) > 0 ? `${dh}h${String(dm).padStart(2,'0')}min` : `${dh}h`) : `${dm}min`;
+                  const dh = Math.floor(totalProceduresMin / 60); const dm = totalProceduresMin % 60;
+                  const durLabel = dh > 0 ? (dm > 0 ? `${dh}h${String(dm).padStart(2,'0')}min` : `${dh}h`) : `${dm}min`;
                   return (
                     <p className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 -mt-1">
                       <Clock className="w-3.5 h-3.5" />
-                      {durLabel} · Término aprox. às {String(endH).padStart(2,'0')}:{String(endM).padStart(2,'0')}
+                      {formProcedures.length > 1 ? `${formProcedures.length} procedimentos · ` : ''}
+                      {durLabel} no total · Término aprox. às {String(endH).padStart(2,'0')}:{String(endM).padStart(2,'0')}
                     </p>
                   );
                 })()}
-                {/* ── Recorrência ── */}
+                {formProcedures.length > 1 && (
+                  <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 -mt-1">
+                    Os procedimentos serão agendados em sequência, um após o outro, a partir do horário informado — e ficam vinculados como um único atendimento.
+                  </p>
+                )}
+
+                {/* ── Divisor de seção: separa "o que será feito" de observações/recorrência ── */}
+                <div className="flex items-center gap-2.5 pt-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 shrink-0">Detalhes adicionais</span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+
+                {/* ── Observação livre do agendamento (ex.: "Retorno PROBIOME") ── */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Observação (opcional)</label>
+                  <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
+                    placeholder="Anotações livres sobre este atendimento (ex.: preferências do paciente, retorno, orientações)..."
+                    className="premium-input resize-none" />
+                </div>
+
+                {/* ── Recorrência: diário, semanal, quinzenal, mensal ou personalizado (não disponível com múltiplos procedimentos — escopo futuro) ── */}
+                {formProcedures.length <= 1 &&
                 <div className="border border-slate-100 rounded-2xl p-4 space-y-3 bg-slate-50/50">
                   <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setUseRecurrence(v => !v)}>
                     <div className="relative">
@@ -1568,45 +1897,108 @@ const Agenda: React.FC<Props> = ({
                   {useRecurrence && (
                     <div className="space-y-3 pt-1">
                       <div>
-                        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Dias da semana</p>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Frequência</p>
                         <div className="flex gap-1.5 flex-wrap">
-                          {DAYS_PT.map((d, i) => (
-                            <button key={i} type="button"
-                              onClick={() => toggleRecDay(i)}
-                              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${recDays.includes(i)
+                          {(Object.keys(REC_FREQUENCY_LABELS) as RecFrequency[]).map(freq => (
+                            <button key={freq} type="button"
+                              onClick={() => { setRecFrequency(freq); setShowRecPreview(false); }}
+                              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${recFrequency === freq
                                 ? 'bg-indigo-600 text-white shadow-sm'
                                 : 'bg-white text-slate-500 border border-slate-200 hover:border-indigo-300'}`}>
-                              {d}
+                              {REC_FREQUENCY_LABELS[freq]}
                             </button>
                           ))}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1">
-                          <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5">Total de sessões</p>
-                          <div className="flex items-center gap-2">
-                            <button type="button" onClick={() => setRecSessions(s => Math.max(1, s - 1))}
-                              className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-sm font-bold">−</button>
-                            <span className="text-lg font-semibold text-slate-800 w-8 text-center">{recSessions}</span>
-                            <button type="button" onClick={() => setRecSessions(s => Math.min(60, s + 1))}
-                              className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-sm font-bold">+</button>
-                            <span className="text-xs text-slate-400">sessões</span>
+                      {recFrequency === 'weekly' && (
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Dias da semana</p>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {DAYS_PT.map((d, i) => (
+                              <button key={i} type="button"
+                                onClick={() => toggleRecDay(i)}
+                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${recDays.includes(i)
+                                  ? 'bg-indigo-600 text-white shadow-sm'
+                                  : 'bg-white text-slate-500 border border-slate-200 hover:border-indigo-300'}`}>
+                                {d}
+                              </button>
+                            ))}
                           </div>
                         </div>
-                        {recDays.length > 0 && (
-                          <div className="text-right">
-                            <p className="text-[10px] text-slate-400">Frequência</p>
-                            <p className="text-sm font-medium text-indigo-600">{recDays.length}x/semana</p>
+                      )}
+
+                      {recFrequency === 'custom' && (
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5">Repetir a cada</p>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setRecCustomInterval(n => Math.max(1, n - 1))}
+                              className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-sm font-bold">−</button>
+                            <span className="text-lg font-semibold text-slate-800 w-8 text-center">{recCustomInterval}</span>
+                            <button type="button" onClick={() => setRecCustomInterval(n => Math.min(180, n + 1))}
+                              className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-sm font-bold">+</button>
+                            <span className="text-xs text-slate-400">dia{recCustomInterval !== 1 ? 's' : ''}</span>
                           </div>
-                        )}
+                        </div>
+                      )}
+
+                      <div className="bg-white rounded-xl border border-slate-100 px-3 py-2 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider">Repetição</span>
+                        <span className="text-sm font-medium text-indigo-600">
+                          {recFrequency === 'weekly'   && (recDays.length > 0 ? `${recDays.length}x por semana` : '— selecione os dias')}
+                          {recFrequency === 'daily'    && 'todos os dias'}
+                          {recFrequency === 'biweekly' && 'a cada 2 semanas'}
+                          {recFrequency === 'monthly'  && 'todo mês'}
+                          {recFrequency === 'custom'   && `a cada ${recCustomInterval} dia${recCustomInterval !== 1 ? 's' : ''}`}
+                        </span>
                       </div>
 
-                      {formDate && recDays.length > 0 && recSessions > 0 && (
+                      {/* ── Término: deixa explícito quando a série acaba (Após N ocorrências / Em uma data) ── */}
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Termina</p>
+                        <div className="space-y-2">
+                          <label className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-all ${recEndMode === 'count' ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                            onClick={() => setRecEndMode('count')}>
+                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${recEndMode === 'count' ? 'border-indigo-600' : 'border-slate-300'}`}>
+                              {recEndMode === 'count' && <span className="w-2 h-2 rounded-full bg-indigo-600" />}
+                            </span>
+                            <span className="text-xs font-medium text-slate-600 shrink-0">Após</span>
+                            <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                              <button type="button" onClick={() => { setRecEndMode('count'); setRecSessions(s => Math.max(1, s - 1)); }}
+                                className="w-6 h-6 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-xs font-bold">−</button>
+                              <span className="text-sm font-semibold text-slate-800 w-7 text-center">{recSessions}</span>
+                              <button type="button" onClick={() => { setRecEndMode('count'); setRecSessions(s => Math.min(60, s + 1)); }}
+                                className="w-6 h-6 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center text-xs font-bold">+</button>
+                            </div>
+                            <span className="text-xs text-slate-400 shrink-0">ocorrência{recSessions !== 1 ? 's' : ''}</span>
+                          </label>
+
+                          <label className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-all ${recEndMode === 'date' ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                            onClick={() => setRecEndMode('date')}>
+                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${recEndMode === 'date' ? 'border-indigo-600' : 'border-slate-300'}`}>
+                              {recEndMode === 'date' && <span className="w-2 h-2 rounded-full bg-indigo-600" />}
+                            </span>
+                            <span className="text-xs font-medium text-slate-600 shrink-0">Em uma data</span>
+                            <input type="date" value={recEndDate} min={formDate || undefined}
+                              onChange={e => { setRecEndMode('date'); setRecEndDate(e.target.value); }}
+                              onClick={e => e.stopPropagation()}
+                              className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-indigo-400 transition-all" />
+                          </label>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1.5 ml-1">
+                          Cada sessão vira um agendamento real na agenda — por isso pedimos um limite de término.
+                        </p>
+                      </div>
+
+                      {formDate && recurrenceReady && (
                         <button type="button"
-                          onClick={() => { setRecPreview(generateRecurrenceDates(formDate, recDays, recSessions)); setShowRecPreview(v => !v); }}
+                          onClick={() => {
+                            const { sessions: pCap, untilDate: pUntil } = resolveRecurrenceParams();
+                            setRecPreview(generateRecurrenceDates(formDate, recFrequency, pCap, { days: recDays, customInterval: recCustomInterval, untilDate: pUntil }));
+                            setShowRecPreview(v => !v);
+                          }}
                           className="text-xs text-indigo-600 hover:text-indigo-800 font-medium underline">
-                          {showRecPreview ? 'Ocultar' : 'Ver'} as {recSessions} datas →
+                          {showRecPreview ? 'Ocultar' : 'Ver'} datas geradas →
                         </button>
                       )}
 
@@ -1623,14 +2015,18 @@ const Agenda: React.FC<Props> = ({
                       )}
                     </div>
                   )}
-                </div>
+                </div>}
 
                 <button type="submit" disabled={saving || !selPatient || !selPatient.name.trim()}
                   className="w-full premium-button bg-indigo-600 text-white shadow-lg shadow-indigo-900/20 hover:bg-indigo-700 mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
                   {saving
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</>
-                    : useRecurrence && recDays.length > 0
-                      ? <><Check size={18} /> Agendar {recSessions} sessões</>
+                    : useRecurrence && recurrenceReady && (recEndMode === 'date' || recSessions > 1)
+                      ? <><Check size={18} />
+                          {recEndMode === 'date'
+                            ? `Agendar série até ${recEndDate ? new Date(recEndDate + 'T12:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}`
+                            : `Agendar ${recSessions} sessões`}
+                        </>
                       : <><Check size={18} /> Confirmar Agendamento</>
                   }
                 </button>
@@ -1742,6 +2138,12 @@ const Agenda: React.FC<Props> = ({
                     <select value={editStatus} onChange={e => setEditStatus(e.target.value)} className="premium-input appearance-none">
                       {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Observação</label>
+                    <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
+                      placeholder="Anotações livres sobre este atendimento (ex.: preferências do paciente, retorno, orientações)..."
+                      className="premium-input resize-none" />
                   </div>
                 </div>
               )}
@@ -1921,6 +2323,59 @@ const Agenda: React.FC<Props> = ({
         </div>
       )}
 
+      {/* ── Popover de hover: dados rápidos do paciente ──
+          Renderizado fora dos cards de propósito: o card tem `overflow-hidden` +
+          `hover:brightness-95` (filter), e `filter` cria um "containing block" para
+          elementos `position: fixed` — isso fazia o popover ser cortado/realinhado
+          dentro da própria caixa do card, entrando em loop de mouseenter/mouseleave
+          (o "piscar" relatado). Mantendo-o no nível raiz, ancorado uma única vez
+          (sem seguir o cursor a cada pixel), ele fica estável e legível. */}
+      {hoverCard && dragPreview?.aptId !== hoverCard.aptId && (() => {
+        const apt = appointments.find(a => a.id === hoverCard.aptId);
+        if (!apt) return null;
+        const hp  = patients.find(p => p.id === apt.patient_id) || null;
+        const patName = (apt as any).patient_name || hp?.name || 'Paciente';
+        const age = calcPatientAge(hp);
+        const hasInfo = !!(hp?.phone || age !== null || (hp?.alerts && hp.alerts.trim()) || (apt.notes && apt.notes.trim()));
+        if (!hasInfo) return null;
+        const POP_W = 248;
+        const left = Math.min(hoverCard.x + 10, window.innerWidth - POP_W - 12);
+        const top  = Math.min(Math.max(hoverCard.y, 12), window.innerHeight - 220);
+        return (
+          <div
+            style={{ position: 'fixed', left, top, width: POP_W, zIndex: 70 }}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-3.5 pointer-events-none"
+          >
+            <p className="text-sm font-black text-slate-800 truncate">{patName}</p>
+            {(hp?.phone || age !== null) && (
+              <div className="mt-1.5 space-y-1">
+                {hp?.phone && (
+                  <p className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
+                    <Phone className="w-3 h-3 shrink-0 text-slate-400" /> {hp.phone}
+                  </p>
+                )}
+                {age !== null && (
+                  <p className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
+                    <User className="w-3 h-3 shrink-0 text-slate-400" /> {age} anos
+                  </p>
+                )}
+              </div>
+            )}
+            {hp?.alerts && hp.alerts.trim() && (
+              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-snug">
+                <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                <span className="line-clamp-3">{hp.alerts}</span>
+              </p>
+            )}
+            {apt.notes && apt.notes.trim() && (
+              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500 italic leading-snug">
+                <FileText className="w-3 h-3 shrink-0 mt-0.5 text-slate-400" />
+                <span className="line-clamp-3">{apt.notes}</span>
+              </p>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };
