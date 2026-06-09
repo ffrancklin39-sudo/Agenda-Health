@@ -2333,22 +2333,45 @@ const Agenda: React.FC<Props> = ({
       {hoverCard && dragPreview?.aptId !== hoverCard.aptId && (() => {
         const apt = appointments.find(a => a.id === hoverCard.aptId);
         if (!apt) return null;
-        const hp  = patients.find(p => p.id === apt.patient_id) || null;
+        const hp      = patients.find(p => p.id === apt.patient_id) || null;
         const patName = (apt as any).patient_name || hp?.name || 'Paciente';
-        const age = calcPatientAge(hp);
-        const hasInfo = !!(hp?.phone || age !== null || (hp?.alerts && hp.alerts.trim()) || (apt.notes && apt.notes.trim()));
-        if (!hasInfo) return null;
-        const POP_W = 248;
+        const age     = calcPatientAge(hp);
+
+        // Serviço(s): se o card agrupa múltiplos procedimentos (group_id),
+        // mostra todos; caso contrário, mostra o serviço único.
+        const groupApts = apt.group_id
+          ? appointments
+              .filter(a => a.group_id === apt.group_id)
+              .sort((a, b) => (a.date_time || '').localeCompare(b.date_time || ''))
+          : [apt];
+        const serviceNames = groupApts.map(
+          a => services.find(s => s.id === a.service_id)?.name || 'Procedimento'
+        );
+
+        const POP_W = 256;
         const left = Math.min(hoverCard.x + 10, window.innerWidth - POP_W - 12);
-        const top  = Math.min(Math.max(hoverCard.y, 12), window.innerHeight - 220);
+        const top  = Math.min(Math.max(hoverCard.y, 12), window.innerHeight - 260);
         return (
           <div
             style={{ position: 'fixed', left, top, width: POP_W, zIndex: 70 }}
             className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-3.5 pointer-events-none"
           >
+            {/* Paciente */}
             <p className="text-sm font-black text-slate-800 truncate">{patName}</p>
+
+            {/* Serviço(s) — sempre visível */}
+            <div className="mt-1.5 space-y-0.5">
+              {serviceNames.map((name, i) => (
+                <p key={i} className="flex items-center gap-1.5 text-[11px] text-indigo-600 font-semibold truncate">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                  {name}
+                </p>
+              ))}
+            </div>
+
+            {/* Telefone + idade */}
             {(hp?.phone || age !== null) && (
-              <div className="mt-1.5 space-y-1">
+              <div className="mt-2 space-y-1">
                 {hp?.phone && (
                   <p className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
                     <Phone className="w-3 h-3 shrink-0 text-slate-400" /> {hp.phone}
@@ -2361,12 +2384,16 @@ const Agenda: React.FC<Props> = ({
                 )}
               </div>
             )}
+
+            {/* Alertas */}
             {hp?.alerts && hp.alerts.trim() && (
               <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-snug">
                 <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
                 <span className="line-clamp-3">{hp.alerts}</span>
               </p>
             )}
+
+            {/* Observação */}
             {apt.notes && apt.notes.trim() && (
               <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500 italic leading-snug">
                 <FileText className="w-3 h-3 shrink-0 mt-0.5 text-slate-400" />

@@ -41,11 +41,26 @@ Ainda pendente: Agenda (lógica incompleta), Automações (placeholder), Serviç
 ---
 
 - [ ] Agenda — completar lógica de criação/edição/cancelamento
-  - [ ] Permitir múltiplos procedimentos no mesmo agendamento/paciente (ex.: limpeza de pele + criolipólise + anamnese na mesma sessão) — feedback real da Candia, 2026-06-08
+  - [x] Permitir múltiplos procedimentos no mesmo agendamento/paciente (ex.: limpeza de pele + criolipólise + anamnese na mesma sessão) — implementado em 2026-06-08
   - [x] Recorrência flexível: agora com Diário, Semanal, Quinzenal, Mensal e Personalizado (intervalo livre em dias) — implementado em 2026-06-08
   - [x] Campo de observação no agendamento (textarea livre no modal de criar e editar, indicador visual no card quando preenchido — usa o campo `notes` já existente em `appointments`) — implementado em 2026-06-08
   - [x] Horário inicial da grade alterado de 7h para 9h, reduzindo a faixa visível e a rolagem necessária — implementado em 2026-06-08
+  - [x] Hover nos cards mostra serviço(s), telefone, idade, alertas e observação — implementado em 2026-06-08
+
+- [ ] **Ficha completa do paciente (PatientProfile) — URGENTE** *(doutoras precisam disso para usar o sistema)*
+  - [ ] Anamnese estruturada (formulário editável por especialidade)
+  - [ ] Evolução clínica (registro cronológico por consulta)
+  - [ ] Histórico de agendamentos e procedimentos realizados
+  - [ ] Documentos e exames (upload + visualização)
+  - [ ] Prescrições e orientações
+  - [ ] Linha do tempo clínica unificada
+
 - [ ] Serviços (ServicesCatalog) — conectar ao Supabase, sair de "UI apenas"
+
+- [ ] **Migração para domínio próprio** *(domínio já existe, só precisa configurar)*
+  - [ ] Apontar DNS do domínio para a Vercel
+  - [ ] Configurar domínio customizado no painel da Vercel
+  - [ ] Atualizar URLs de redirect no Supabase Auth (OAuth callback)
 
 ---
 
