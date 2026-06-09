@@ -1107,7 +1107,7 @@ const Agenda: React.FC<Props> = ({
           )}
           {apt.notes && apt.notes.trim() && (
             <FileText
-              title={`Observação: ${apt.notes}`}
+              aria-label={`Observação: ${apt.notes}`}
               className={`ml-0.5 opacity-60 ${scale > 1 ? 'w-3 h-3' : 'w-2.5 h-2.5'}`}
             />
           )}
