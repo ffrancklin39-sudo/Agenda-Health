@@ -14,6 +14,7 @@ import { phoneMatchKey, toTitleCase } from '../phoneUtils';
 import AvatarUpload from './AvatarUpload';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
 import AnamnesisTab from './AnamnesisTab';
+import PrescriptionsTab from './PrescriptionsTab';
 
 /* -------------------------------------------------
    Tipos auxiliares
@@ -799,9 +800,9 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
           )}
 
           {/* PRESCRICOES */}
-          {activeTab === 'prescricoes' && (
-            <div className="max-w-4xl mx-auto px-6 py-5">
-              <Placeholder icon={Pill} label="Prescricoes" />
+          {activeTab === 'prescricoes' && patient?.id && patient.id !== 'NEW' && (
+            <div className="flex flex-col px-6 py-5" style={{ height: 'calc(100vh - 120px)' }}>
+              <PrescriptionsTab patientId={patient.id} />
             </div>
           )}
 
