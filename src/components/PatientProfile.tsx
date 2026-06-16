@@ -78,14 +78,18 @@ const LB = 'block text-[11px] font-bold uppercase text-slate-400 tracking-wider 
 const ESTADOS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 
 const RECORD_LABELS: Record<string, { label: string; color: string }> = {
-  prescricao:     { label: 'Prescricao',     color: 'bg-indigo-100 text-indigo-700'   },
-  atestado:       { label: 'Atestado',       color: 'bg-emerald-100 text-emerald-700' },
-  evolucao:       { label: 'Evolucao',       color: 'bg-sky-100 text-sky-700'         },
-  anamnese:       { label: 'Anamnese',       color: 'bg-violet-100 text-violet-700'   },
-  laudo:          { label: 'Laudo',          color: 'bg-amber-100 text-amber-700'     },
-  encaminhamento: { label: 'Encaminhamento', color: 'bg-rose-100 text-rose-700'       },
-  exame:          { label: 'Exame',          color: 'bg-cyan-100 text-cyan-700'       },
+  prescricao:     { label: 'Prescrição',      color: 'bg-indigo-100 text-indigo-700'   },
+  atestado:       { label: 'Atestado',        color: 'bg-emerald-100 text-emerald-700' },
+  evolucao:       { label: 'Evolução',        color: 'bg-sky-100 text-sky-700'         },
+  anamnese:       { label: 'Anamnese',        color: 'bg-violet-100 text-violet-700'   },
+  laudo:          { label: 'Laudo',           color: 'bg-amber-100 text-amber-700'     },
+  encaminhamento: { label: 'Encaminhamento',  color: 'bg-rose-100 text-rose-700'       },
+  exame:          { label: 'Exame',           color: 'bg-cyan-100 text-cyan-700'       },
+  pedidosexames:  { label: 'Pedido de Exame', color: 'bg-cyan-100 text-cyan-700'       },
+  diagnostico:    { label: 'Diagnóstico',     color: 'bg-purple-100 text-purple-700'   },
 };
+const recordLabel = (type: string) =>
+  RECORD_LABELS[type?.toLowerCase() ?? ''] ?? { label: type, color: 'bg-slate-100 text-slate-600' };
 
 /* -------------------------------------------------
    Sidebar nav items
@@ -130,6 +134,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
   const [loadingRecords,       setLoadingRecords]       = useState(false);
   const [loadingAppointments,  setLoadingAppointments]  = useState(false);
   const [expandedRecord,       setExpandedRecord]       = useState<string | null>(null);
+  const [tlFilter,             setTlFilter]             = useState('all');
 
   /* Form */
   const empty = {
@@ -921,39 +926,95 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
           )}
 
           {/* LINHA DO TEMPO */}
-          {activeTab === 'timeline' && (
-            <div className="max-w-4xl mx-auto px-6 py-5">
-              {loadingRecords ? (
-                <div className="flex justify-center py-20">
-                  <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                </div>
-              ) : clinicalRecords.length === 0 ? (
-                <Placeholder icon={Clock} label="Linha do Tempo" />
-              ) : (
-                <div className="relative pl-6 space-y-4">
-                  <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-slate-200" />
-                  {clinicalRecords.map(rec => {
-                    const meta = RECORD_LABELS[rec.record_type] || { label: rec.record_type, color: 'bg-slate-100 text-slate-600' };
-                    return (
-                      <div key={rec.id} className="relative">
-                        <div className="absolute -left-4 top-3 w-2.5 h-2.5 rounded-full bg-indigo-500 border-2 border-white" />
-                        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
-                            <span className="text-xs text-slate-400">{fmtDate(rec.record_date)}</span>
-                            {rec.professional && <span className="text-xs text-slate-500">{rec.professional}</span>}
+          {activeTab === 'timeline' && (() => {
+            const types = Array.from(new Set(clinicalRecords.map(r => r.record_type))).sort();
+            const visible = tlFilter === 'all' ? clinicalRecords : clinicalRecords.filter(r => r.record_type === tlFilter);
+            return (
+              <div className="max-w-4xl mx-auto px-6 py-5">
+                {/* toolbar */}
+                {clinicalRecords.length > 0 && (
+                  <div className="flex items-center gap-3 mb-5">
+                    <Clock className="w-4 h-4 text-slate-400" />
+                    <span className="font-bold text-slate-800 flex-1">Linha do Tempo</span>
+                    <span className="text-xs text-slate-400">{clinicalRecords.length} registros</span>
+                    <select
+                      value={tlFilter}
+                      onChange={e => setTlFilter(e.target.value)}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    >
+                      <option value="all">Todos os tipos</option>
+                      {types.map(t => (
+                        <option key={t} value={t}>{recordLabel(t).label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {loadingRecords ? (
+                  <div className="flex justify-center py-20">
+                    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                  </div>
+                ) : visible.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mb-3">
+                      <Clock className="w-7 h-7 text-slate-300" />
+                    </div>
+                    <p className="font-bold text-slate-600">Nenhum registro encontrado</p>
+                    <p className="text-sm text-slate-400 mt-1">Os registros clínicos aparecerão aqui conforme forem criados.</p>
+                  </div>
+                ) : (
+                  <div className="relative pl-6 space-y-3">
+                    <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-slate-200" />
+                    {visible.map(rec => {
+                      const meta = recordLabel(rec.record_type);
+                      const expanded = expandedRecord === rec.id;
+                      const hasHtml = !!rec.content_html;
+                      return (
+                        <div key={rec.id} className="relative">
+                          <div className="absolute -left-4 top-4 w-2.5 h-2.5 rounded-full bg-indigo-400 border-2 border-white" />
+                          <div className={`bg-white border rounded-xl transition-all ${expanded ? 'border-indigo-200 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
+                            {/* cabeçalho */}
+                            <button
+                              className="w-full text-left px-4 py-3 flex items-start gap-2"
+                              onClick={() => setExpandedRecord(expanded ? null : rec.id)}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${meta.color}`}>{meta.label}</span>
+                                  <span className="text-xs text-slate-400">{fmtDate(rec.record_date)}</span>
+                                  {rec.professional && <span className="text-xs text-slate-500 truncate">{rec.professional}</span>}
+                                </div>
+                                {!expanded && rec.content_text && (
+                                  <p className="text-xs text-slate-600 line-clamp-2">{rec.content_text}</p>
+                                )}
+                              </div>
+                              <span className="text-slate-300 text-xs shrink-0 mt-0.5">{expanded ? '▲' : '▼'}</span>
+                            </button>
+
+                            {/* conteúdo expandido */}
+                            {expanded && (
+                              <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+                                {hasHtml ? (
+                                  <div
+                                    className="prose prose-sm max-w-none text-slate-700 text-xs leading-relaxed"
+                                    dangerouslySetInnerHTML={{ __html: rec.content_html! }}
+                                  />
+                                ) : rec.content_text ? (
+                                  <p className="text-xs text-slate-700 whitespace-pre-wrap">{rec.content_text}</p>
+                                ) : (
+                                  <p className="text-xs text-slate-400 italic">Sem conteúdo registrado.</p>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          {rec.content_text && (
-                            <p className="text-xs text-slate-600 line-clamp-2">{rec.content_text}</p>
-                          )}
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* FINANCEIRO */}
           {activeTab === 'financeiro' && (
