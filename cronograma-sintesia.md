@@ -1,107 +1,138 @@
 # Cronograma SintesIA — Plano Completo (As 4 Pontas)
 
-**Atualizado em:** 2026-06-06
+**Atualizado em:** 2026-06-15
 **Como usar:** siga as fases NA ORDEM. Marque `[x]` quando terminar. Não pule fases — cada uma destrava a próxima.
+**Ritmo:** Seg–Sáb · ~3h/dia · 1 sessão = 1 dia de trabalho
 
 ---
 
-## 📍 Onde você está agora
+## 📍 Onde você está agora (Jun 15, 2026)
 
-Já funcionando: Dashboard, CRM (kanban), Pacientes, Tarefas, Financeiro (5 sub-abas), BI & Margem, Relatórios (11), Configurações.
+**Funcionando:** Dashboard, CRM Inteligente (Camada 1 completa), Agenda, Pacientes, Tarefas, Financeiro (5 sub-abas), BI & Margem, Relatórios (11), Configurações, Serviços (CRUD), Anamnese (builder + aba no perfil).
 
-Ainda pendente: Agenda (lógica incompleta), Automações (placeholder), Serviços (só UI).
+**Pendente na Fase 1:** abas Prescrições, Documentos/Exames e Linha do Tempo no perfil do paciente + CRM Camada 2 (IA conversacional).
+
+**⚠️ Ação imediata:** rodar `sql/services_add_description.sql` no Supabase SQL Editor para habilitar o campo Descrição nos serviços.
+
+**⚠️ Commit pendente:** muita coisa não commitada desde 64ec680 — AnamnesisTab, PatientProfile, ServicesCatalog, Dashboard, PaymentRegisterModal.
 
 ---
 
 ## FASE 1 — Fechar a base operacional
 *Objetivo: ninguém trava no dia a dia da clínica.*
+*🏁 Meta: 24 de junho de 2026*
 
-- [x] **CRM — Automação de follow-up (Parte A): lead parado 7+ dias é movido sozinho para "Leads Frios" + notificação** ✅ implementado em 2026-06-06
+### CRM Inteligente
 
-### CRMi → CRM Inteligente (análise comparativa em `docs/analise-crmi-vs-mercado-2026.md`)
-*Construir em camadas — cada uma é a base da próxima. Não pular etapa.*
+- [x] **Automação Projeto Lazaro — Parte A:** lead parado 7+ dias → "Leads Frios" + notificação ✅ 2026-06-06
 
-**🟢 Camada 1 — Inteligência sobre os dados que já existem (sem infra nova)** ✅ concluída em 2026-06-06
-- [x] Timeline de interações por lead (histórico cronológico: contatos, mudanças de status, pagamentos — hoje só existe um campo de anotação único)
-- [x] Lead scoring baseado no histórico real de conversões (nota de probabilidade por lead novo)
-- [x] Painel de "saúde do funil" (alertas tipo "conversão caiu essa semana", "origem X rendendo menos")
-- [x] Atribuição de responsável por lead (quem da equipe está cuidando + desempenho por pessoa)
+**🟢 Camada 1 — Inteligência sobre dados existentes** ✅ concluída em 2026-06-06
+- [x] Timeline de interações por lead (histórico cronológico)
+- [x] Lead scoring baseado no histórico real de conversões
+- [x] Painel de saúde do funil (alertas automáticos)
+- [x] Atribuição de responsável por lead
 
-**🟡 Camada 2 — Inteligência conversacional (usa Gemini/Groq que já estão instalados)**
-- [ ] Resumo automático do histórico do paciente
-- [ ] Análise de interesse/urgência da conversa (a IA lê o WhatsApp e sinaliza "lead quente, responda agora")
-- [ ] Sugestão de próxima melhor ação
-- [ ] Geração de rascunho de mensagem personalizada para revisão humana
+**🟡 Camada 2 — Inteligência conversacional (Gemini/Groq já instalados)**
+*Previsão: 20 e 23 de junho*
+- [ ] Resumo automático do histórico do paciente `[Jun 20]`
+- [ ] Análise de interesse/urgência (IA lê contexto e sinaliza "lead quente") `[Jun 23]`
+- [ ] Sugestão de próxima melhor ação `[Jun 23]`
+- [ ] Rascunho de mensagem personalizada para revisão humana `[Jun 23]`
 
-**🔴 Camada 3 — Automação autônoma e omnichannel (depende da Sofia ativa — Fase 3)**
-- [ ] Inbox omnichannel (WhatsApp + Instagram + site unificados no CRM)
-- [ ] Agente autônomo cuidando do funil (Sofia agenda, confirma, move lead sozinha)
-- [ ] Sequências automáticas de nutrição expandidas (Projeto Lazaro além dos Leads Frios)
+**🔴 Camada 3 — Automação autônoma (depende da Sofia ativa — Fase 3)**
+- [ ] Inbox omnichannel (WhatsApp + Instagram + site)
+- [ ] Agente autônomo cuidando do funil (Sofia agenda, confirma, move lead)
+- [ ] Projeto Lazaro Parte B (nutrição contínua de leads frios)
 
 ---
 
-- [ ] Agenda — completar lógica de criação/edição/cancelamento
-  - [x] Permitir múltiplos procedimentos no mesmo agendamento/paciente (ex.: limpeza de pele + criolipólise + anamnese na mesma sessão) — implementado em 2026-06-08
-  - [x] Recorrência flexível: agora com Diário, Semanal, Quinzenal, Mensal e Personalizado (intervalo livre em dias) — implementado em 2026-06-08
-  - [x] Campo de observação no agendamento (textarea livre no modal de criar e editar, indicador visual no card quando preenchido — usa o campo `notes` já existente em `appointments`) — implementado em 2026-06-08
-  - [x] Horário inicial da grade alterado de 7h para 9h, reduzindo a faixa visível e a rolagem necessária — implementado em 2026-06-08
-  - [x] Hover nos cards mostra serviço(s), telefone, idade, alertas e observação — implementado em 2026-06-08
+### Agenda ✅ concluída em 2026-06-09
+- [x] Lógica completa de criação/edição/cancelamento
+- [x] Múltiplos procedimentos por agendamento
+- [x] Recorrência flexível (Diário, Semanal, Quinzenal, Mensal, Personalizado)
+- [x] Campo de observação no card
+- [x] Hover com dados rápidos do paciente
+- [x] Status visual (cancelado, não compareceu)
+- [x] Cancelamento com motivo
+- [x] Aba Histórico no modal de edição
+- [x] Grade compacta (9h–20h, sem rolagem em notebook)
 
-- [ ] **Ficha completa do paciente (PatientProfile) — URGENTE** *(doutoras precisam disso para usar o sistema)*
-  - [ ] Anamnese estruturada (formulário editável por especialidade)
-  - [ ] Evolução clínica (registro cronológico por consulta)
-  - [ ] Histórico de agendamentos e procedimentos realizados
-  - [ ] Documentos e exames (upload + visualização)
-  - [ ] Prescrições e orientações
-  - [ ] Linha do tempo clínica unificada
+---
 
-- [ ] Serviços (ServicesCatalog) — conectar ao Supabase, sair de "UI apenas"
+### Ficha completa do paciente (PatientProfile)
+*Previsão: 16–19 de junho*
 
-- [ ] **Migração para domínio próprio** *(domínio já existe, só precisa configurar)*
-  - [ ] Apontar DNS do domínio para a Vercel
-  - [ ] Configurar domínio customizado no painel da Vercel
-  - [ ] Atualizar URLs de redirect no Supabase Auth (OAuth callback)
+- [x] Anamnese estruturada — builder drag-drop + aba de preenchimento ✅ 2026-06-09
+- [x] Histórico de agendamentos — aba com dados reais do Supabase ✅ 2026-06-09
+- [x] Evolução clínica — coberta pelos templates do tipo "evolucao" no builder ✅
+- [ ] Prescrições e orientações `[Jun 16]`
+- [ ] Linha do tempo clínica unificada `[Jun 17]`
+- [ ] Documentos e exames (upload + visualização via Supabase Storage) `[Jun 18–19]`
+
+---
+
+### Serviços ✅ concluído em 2026-06-09
+- [x] CRUD completo (criar, editar, excluir) conectado ao Supabase
+- [ ] ⚠️ Rodar `sql/services_add_description.sql` para habilitar campo Descrição (usuário)
+
+---
+
+### Melhorias pontuais ✅
+- [x] Dashboard — receita e lucro real de `payments` (não mais `patients.price`)
+- [x] PaymentRegisterModal — proteção anti-duplicata
+
+---
+
+### Migração para domínio próprio *(30 min — tarefa do usuário)*
+- [ ] Apontar DNS do domínio para a Vercel `[Jun 24]`
+- [ ] Configurar domínio customizado no painel da Vercel `[Jun 24]`
+- [ ] Atualizar URLs de redirect no Supabase Auth `[Jun 24]`
 
 ---
 
 ## FASE 2 — Torre de Controle: fechar pendências do Financeiro
-*Objetivo: gestão com visão completa de lucratividade (já bem avançada, faltam refinamentos).*
+*Objetivo: gestão com visão completa de lucratividade.*
+*🏁 Meta: 9 de julho de 2026*
 
-- [ ] Pagamento parcelado (installments)
-- [ ] Pagamento parcial / saldo devedor
-- [ ] Tela de pagamento de comissões aos profissionais
-- [ ] Juros e multa em contas vencidas
-- [ ] Conta bancária vinculada por transação
-- [ ] Caixa pequeno (lançamento rápido)
-- [ ] Projeção de fluxo de caixa 30/60/90 dias
-- [ ] Competência vs caixa no DRE
-- [ ] Convênios/planos de saúde
-- [ ] Fechamento de período contábil
+- [ ] Pagamento parcelado (installments) `[Jun 25]`
+- [ ] Pagamento parcial / saldo devedor `[Jun 26]`
+- [ ] Tela de pagamento de comissões aos profissionais `[Jun 27]`
+- [ ] Caixa pequeno (lançamento rápido) `[Jun 30]`
+- [ ] Projeção de fluxo de caixa 30/60/90 dias `[Jul 1]`
+- [ ] Competência vs caixa no DRE `[Jul 2]`
+- [ ] Conta bancária vinculada por transação `[Jul 2]`
+- [ ] Juros e multa em contas vencidas `[Jul 3]`
+- [ ] Convênios/planos de saúde — parte 1 (cadastro + vínculo) `[Jul 7]`
+- [ ] Convênios/planos de saúde — parte 2 (repasse + relatório) `[Jul 8]`
+- [ ] Fechamento de período contábil `[Jul 9]`
 
 ---
 
 ## FASE 3 — Painel da Recepção (a Concierge Humana)
 *Objetivo: a IA cuida da burocracia, a recepção cuida do acolhimento.*
+*🏁 Meta: 14 de julho de 2026*
 
-- [ ] Lembretes automáticos de consulta (WhatsApp)
-- [ ] Sofia (SDR de IA) integrada ao n8n
-- [ ] **Projeto Lazaro — Parte B (depende da Sofia ativa):** quando um lead entra em "Leads Frios" (já automatizado no CRM — ver Fase 1), disparar conteúdo semanal automático sobre o que ele buscava, sem prazo para acabar. Se o lead responder, volta sozinho ao funil ativo.
-- [ ] Notificações de confirmação de consulta
+- [ ] Lembretes automáticos de consulta via WhatsApp (WAHA) `[Jul 10]`
+- [ ] Notificações de confirmação de consulta `[Jul 11]`
+- [ ] Sofia (SDR de IA) — integração final no n8n `[Jul 14]`
+- [ ] **Projeto Lazaro Parte B** (Sofia dispara sequência semanal para leads frios, volta ao funil se responder) `[Jul 14]`
 
 ---
 
 ## FASE 4 — Painel do Profissional (o foco no humano)
 *Objetivo: zero burocracia, máximo "olho no olho" com o paciente.*
+*🏁 Meta: 18 de julho de 2026*
 
-- [ ] Prontuário clínico completo (anamnese, evoluções, prescrições, laudos)
-- [ ] Resumo gerado por IA do histórico do paciente (co-piloto silencioso)
-- [ ] Transcrição de consulta (Groq) + resumo automático (Gemini)
-- [ ] Assinatura digital
+- [ ] Evoluções clínicas estruturadas (registro por consulta, diferente da anamnese) `[Jul 15]`
+- [ ] Transcrição de consulta em tempo real (Groq) `[Jul 16]`
+- [ ] Resumo IA do histórico do paciente — co-piloto silencioso (Gemini) `[Jul 17]`
+- [ ] Assinatura digital `[Jul 18]`
 
 ---
 
 ## FASE 5 — Hub do Paciente (o grande diferencial de mercado)
 *Objetivo: estender a clínica até o bolso do paciente — fidelização absurda.*
+*🏁 Meta: Setembro de 2026 (planejamento separado)*
 
 - [ ] Portal do paciente (web/app)
 - [ ] Exames lado a lado mostrando evolução, laudos fáceis de ler
@@ -112,9 +143,22 @@ Ainda pendente: Agenda (lógica incompleta), Automações (placeholder), Serviç
 
 ---
 
+## 🗓️ Visão rápida do calendário
+
+| Semana | Datas | Foco |
+|--------|-------|------|
+| Sem 1 | Jun 16–20 | Ficha do paciente (Prescrições, Timeline, Docs/Exames) + CRM IA |
+| Sem 2 | Jun 23–27 | CRM Camada 2 + buffer/testes + início Fase 2 |
+| Sem 3 | Jun 30–Jul 4 | Financeiro (parcelado, parcial, comissões, caixa, DRE) |
+| Sem 4 | Jul 7–11 | Financeiro (convênios, fechamento) + início Fase 3 |
+| Sem 5 | Jul 14–18 | Sofia/WhatsApp + Fase 4 (prontuário, IA, transcrição) |
+| Sem 6+ | Ago+ | Fase 5 — Portal do Paciente |
+
+---
+
 ## 🎯 Regra de ouro
 
 > O que evita caos na clínica vem primeiro:
 > **Agenda > Prontuário > Financeiro > Automações**
 
-Se uma ideia nova surgir no meio do caminho, anote ela na fase certa acima — não pare a fase atual para perseguir ela.
+Se uma ideia nova surgir no meio do caminho, anote na fase certa acima — não pare a fase atual para perseguir ela.

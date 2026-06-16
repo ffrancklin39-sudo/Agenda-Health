@@ -35,7 +35,7 @@ const getProfColor  = (color: string) => PROF_COLORS[color] || DEFAULT_COLOR;
 // ─── Time constants ──────────────────────────────────────────────────────────
 const START_HOUR   = 9;
 const END_HOUR     = 20;
-const HOUR_HEIGHT  = 60;          // px per hour
+const HOUR_HEIGHT  = 52;          // px per hour (52 → 11h = 572px de grade, cabe em notebooks 768px)
 const SNAP_MIN     = 15;          // drag snaps to 15-min intervals
 const HOURS        = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
 const DAYS_OF_WEEK = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
@@ -370,6 +370,7 @@ const Agenda: React.FC<Props> = ({
   const [editProfId, setEditProfId]       = useState('');
   const [editStatus, setEditStatus]       = useState('scheduled');
   const [editNotes, setEditNotes]         = useState('');
+  const [editCancelReason, setEditCancelReason] = useState('');
 
   // ── Drag state ──
   const [dragPreview, setDragPreview]     = useState<DragPreview | null>(null);
@@ -476,6 +477,7 @@ const Agenda: React.FC<Props> = ({
     setEditProfId(apt.professional_id || '');
     setEditStatus(apt.status || 'scheduled');
     setEditNotes(apt.notes || '');
+    setEditCancelReason('');
   };
 
   const handleEditSave = async () => {
@@ -505,11 +507,15 @@ const Agenda: React.FC<Props> = ({
 
     setSaving(true);
     try {
+      // Se cancelado, prefixa o motivo nas notas
+      const cancelPrefix = editStatus === 'cancelled' && editCancelReason.trim()
+        ? `[Motivo: ${editCancelReason.trim()}] `
+        : '';
       const updates: Record<string, any> = {
         date_time:        `${editDate}T${editTime}:00`,
         duration_minutes: dur,
         status:           editStatus,
-        notes:            editNotes.trim() || null,
+        notes:            (cancelPrefix + (editNotes.trim() || '')).trim() || null,
       };
       if (editProfId)    updates.professional_id = editProfId;
       if (editServiceId) updates.service_id       = editServiceId;
@@ -1055,8 +1061,11 @@ const Agenda: React.FC<Props> = ({
           width: `calc(${(1 / totalCols) * 100}% - ${scale > 1 ? 24 : 6}px)`,
           height: Math.max(28, previewH - 4),
           background:  colors.bg,
-          borderLeft:  `${scale > 1 ? '4px' : '3px'} solid ${colors.border}`,
+          borderLeft:  apt.status === 'cancelled'
+            ? `${scale > 1 ? '4px' : '3px'} dashed ${colors.border}`
+            : `${scale > 1 ? '4px' : '3px'} solid ${colors.border}`,
           color:        colors.text,
+          opacity:      apt.status === 'cancelled' ? 0.45 : apt.status === 'no_show' ? 0.55 : 1,
           zIndex:       isDragging ? 20 : 5,
           cursor:       isDragging ? 'grabbing' : 'grab',
           boxShadow:    isDragging ? '0 8px 30px rgba(0,0,0,0.18)' : undefined,
@@ -1116,7 +1125,7 @@ const Agenda: React.FC<Props> = ({
         {/* Patient name — click opens profile */}
         <p
           data-apt-name
-          className={`${scale > 1 ? 'text-sm' : 'text-[10px]'} font-black leading-tight truncate hover:underline cursor-pointer`}
+          className={`${scale > 1 ? 'text-sm' : 'text-[10px]'} font-black leading-tight truncate hover:underline cursor-pointer ${apt.status === 'cancelled' || apt.status === 'no_show' ? 'line-through' : ''}`}
           onMouseDown={e => e.stopPropagation()}
           onClick={e => {
             e.stopPropagation();
@@ -1287,15 +1296,13 @@ const Agenda: React.FC<Props> = ({
           {weekDays.map((day, idx) => {
             const ds      = toDateStr(day);
             const isToday = ds === todayStr;
-            const cnt     = filtered.filter(a => a.date_time?.startsWith(ds)).length;
             return (
               <div key={idx}
-                className={`flex-1 min-w-[90px] flex flex-col items-center py-2.5 border-l border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${isToday ? 'bg-indigo-50/40' : ''}`}
+                className={`flex-1 min-w-[80px] flex flex-col items-center py-1.5 border-l border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${isToday ? 'bg-indigo-50/40' : ''}`}
                 onClick={() => { setCurrentDate(day); setView('diario'); }}
               >
                 <span className={`text-[9px] font-black uppercase tracking-widest ${isToday ? 'text-indigo-500' : 'text-slate-400'}`}>{DAYS_OF_WEEK[idx]}</span>
-                <span className={`text-lg font-black mt-0.5 leading-none flex items-center justify-center ${isToday ? 'bg-indigo-600 text-white w-8 h-8 rounded-full' : 'text-slate-700'}`}>{day.getDate()}</span>
-                {cnt > 0 && <span className={`mt-1 text-[9px] font-bold ${isToday ? 'text-indigo-500' : 'text-slate-400'}`}>{cnt} apt</span>}
+                <span className={`text-[15px] font-black mt-0.5 leading-none flex items-center justify-center ${isToday ? 'bg-indigo-600 text-white w-7 h-7 rounded-full' : 'text-slate-700'}`}>{day.getDate()}</span>
               </div>
             );
           })}
@@ -1422,15 +1429,10 @@ const Agenda: React.FC<Props> = ({
 
     return (
       <div className="flex flex-col flex-1 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 bg-white shrink-0">
-          <div>
-            <h3 className="font-black text-slate-800 text-base capitalize">
-              {currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
-            </h3>
-            <p className="text-xs text-slate-400 font-semibold mt-0.5">
-              {dayApts.length} agendamento{dayApts.length !== 1 ? 's' : ''}
-            </p>
-          </div>
+        <div className="flex items-center justify-between px-6 py-2 border-b border-slate-100 bg-white shrink-0">
+          <h3 className="font-black text-slate-800 text-sm capitalize">
+            {currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+          </h3>
         </div>
 
         <div ref={gridRef} className="flex-1 overflow-y-auto custom-scrollbar">
@@ -2135,10 +2137,18 @@ const Agenda: React.FC<Props> = ({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Status</label>
-                    <select value={editStatus} onChange={e => setEditStatus(e.target.value)} className="premium-input appearance-none">
+                    <select value={editStatus} onChange={e => { setEditStatus(e.target.value); if (e.target.value !== 'cancelled') setEditCancelReason(''); }} className="premium-input appearance-none">
                       {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
+                  {editStatus === 'cancelled' && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-rose-400 ml-1 tracking-widest">Motivo do cancelamento</label>
+                      <input value={editCancelReason} onChange={e => setEditCancelReason(e.target.value)}
+                        placeholder="Ex.: Paciente desmarcou, emergência, reagendamento..."
+                        className="premium-input border-rose-200 focus:ring-rose-400" />
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Observação</label>
                     <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
@@ -2190,15 +2200,55 @@ const Agenda: React.FC<Props> = ({
               )}
 
               {/* ── Tab: Histórico ── */}
-              {editTab === 'historico' && (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-300">
-                  <FileText className="w-12 h-12 mb-3 opacity-40" />
-                  <p className="text-sm font-bold text-slate-500">Histórico em breve</p>
-                  <p className="text-xs text-slate-400 mt-1 text-center max-w-[220px]">
-                    Esta funcionalidade estará disponível em uma próxima versão do SintesIA.
-                  </p>
-                </div>
-              )}
+              {editTab === 'historico' && (() => {
+                if (!editingApt) return null;
+                const history = appointments
+                  .filter(a => a.patient_id === editingApt.patient_id && a.id !== editingApt.id)
+                  .sort((a, b) => (b.date_time || '').localeCompare(a.date_time || ''));
+                const statusLabel: Record<string, { label: string; color: string }> = {
+                  scheduled:  { label: 'Marcado',       color: 'text-slate-500  bg-slate-100' },
+                  confirmed:  { label: 'Confirmado',    color: 'text-indigo-600 bg-indigo-50' },
+                  completed:  { label: 'Concluído',     color: 'text-emerald-600 bg-emerald-50' },
+                  cancelled:  { label: 'Cancelado',     color: 'text-rose-600   bg-rose-50' },
+                  no_show:    { label: 'Não compareceu',color: 'text-amber-600  bg-amber-50' },
+                };
+                if (history.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <CalIcon className="w-10 h-10 mb-3 text-slate-200" />
+                      <p className="text-sm font-bold text-slate-400">Sem histórico anterior</p>
+                      <p className="text-xs text-slate-300 mt-1">Este é o primeiro agendamento deste paciente.</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-2">
+                    {history.map(a => {
+                      const svc  = services.find(s => s.id === a.service_id);
+                      const prof = professionals.find(p => p.id === a.professional_id);
+                      const d    = a.date_time ? new Date(a.date_time) : null;
+                      const st   = statusLabel[a.status || 'scheduled'] || statusLabel.scheduled;
+                      return (
+                        <div key={a.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
+                          <div className="text-center min-w-[40px]">
+                            {d && <>
+                              <p className="text-[11px] font-black text-slate-700 leading-none">{d.getDate().toString().padStart(2,'0')}</p>
+                              <p className="text-[9px] font-semibold text-slate-400 uppercase">{d.toLocaleDateString('pt-BR',{month:'short'})}</p>
+                              <p className="text-[9px] text-slate-300">{d.getFullYear()}</p>
+                            </>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-bold text-slate-800 truncate">{svc?.name || 'Procedimento'}</p>
+                            {prof && <p className="text-[10px] text-slate-400 truncate">{prof.name}</p>}
+                            {a.notes && <p className="text-[10px] text-slate-400 italic mt-0.5 truncate">{a.notes}</p>}
+                          </div>
+                          <span className={`shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Footer actions */}

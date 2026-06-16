@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Users, Calendar, TrendingUp, DollarSign, BarChart3,
   Target, BellRing, ChevronRight, CheckCircle2, UserPlus, Percent,
 } from 'lucide-react';
 import { Patient } from '../types';
+import { supabase } from '../services/supabaseClient';
 
 interface Props {
   patients: Patient[];
@@ -14,6 +15,28 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+  // Faturamento real — lê da tabela payments (status=paid, mês atual)
+  const [realRevenue, setRealRevenue]   = useState<number | null>(null);
+  const [realNetProfit, setRealNetProfit] = useState<number | null>(null);
+
+  useEffect(() => {
+    const from = monthStart.toISOString();
+    const to   = monthEnd.toISOString();
+    supabase
+      .from('payments')
+      .select('amount, net_profit')
+      .eq('status', 'paid')
+      .gte('payment_date', from)
+      .lte('payment_date', to)
+      .then(({ data, error }) => {
+        if (error) { console.error('[Dashboard] payments error:', error); return; }
+        const rows = data || [];
+        setRealRevenue(rows.reduce((s, r) => s + (r.amount || 0), 0));
+        setRealNetProfit(rows.reduce((s, r) => s + (r.net_profit || 0), 0));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const monthName = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
@@ -51,16 +74,7 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
     ? Math.round((convertedThisMonth.length / createdThisMonth.length) * 100)
     : 0;
 
-  // Faturamento este mes: pacientes confirmados/pagos com agendamento no mes
-  const revenueThisMonth = patients
-    .filter(p => {
-      if (!CONVERTED.includes((p.status || '').toLowerCase())) return false;
-      const d = p.appointment_date || p.appointmentDate;
-      if (!d) return false;
-      const dt = new Date(d);
-      return dt >= monthStart && dt <= monthEnd;
-    })
-    .reduce((acc, p) => acc + (p.price || 0), 0);
+  const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   const stats = [
     {
@@ -89,8 +103,10 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
     },
     {
       label: 'Faturamento',
-      sublabel: 'este mês',
-      value: revenueThisMonth.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      sublabel: realNetProfit !== null
+        ? `líquido: ${fmt(realNetProfit)}`
+        : 'carregando...',
+      value: realRevenue !== null ? fmt(realRevenue) : '—',
       icon: DollarSign,
       color: 'text-amber-600',
       bg: 'bg-amber-50',
@@ -281,7 +297,7 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
             <div className="flex items-center justify-between bg-white/10 px-4 py-3 rounded-xl border border-white/10">
               <span className="text-xs font-semibold text-indigo-100">Faturamento</span>
               <span className="text-sm font-black">
-                {revenueThisMonth.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {realRevenue !== null ? fmt(realRevenue) : '—'}
               </span>
             </div>
           </div>

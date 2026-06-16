@@ -1,18 +1,22 @@
+# Dependências e build
 node_modules
+dist
 .vercel
-".mcp.json" 
-"Fluxo Novo-Cloude-n8n.json" 
-"sofia-sdr-n8n.json" 
-".mcp.json" 
-"Fluxo Novo-Cloude-n8n.json" 
-"sofia-sdr-n8n.json" 
-".mcp.json" 
-"Fluxo Novo-Cloude-n8n.json" 
-"sofia-sdr-n8n.json" 
-".mcp.json" 
-"Fluxo Novo-Cloude-n8n.json" 
-"sofia-sdr-n8n.json" 
 
+# Segredos — NUNCA commitar
+.env
+.env.local
+.env.*.local
 .mcp.json
+
+# Dados sensíveis de pacientes (LGPD) — nunca versionar
+scripts/migration_output/
+
+# Workflows n8n com credenciais
 Fluxo Novo-Cloude-n8n.json
 sofia-sdr-n8n.json
+
+# Sistema
+.DS_Store
+Thumbs.db
+supabase/.temp

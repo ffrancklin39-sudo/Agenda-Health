@@ -367,7 +367,7 @@ const App: React.FC = () => {
                   {activeTab === 'agenda'       && <Agenda patients={patients} professionals={professionals} services={services} onSelectPatient={handlePatientSelect} onRefresh={fetchPatients} refreshTrigger={agendaRefreshTrigger} />}
                   {activeTab === 'automations'  && <Automations patients={patients} />}
                   {activeTab === 'finance'      && <Finance userRole={userRole} patients={patients} />}
-                  {activeTab === 'services'     && <ServicesCatalog services={services} />}
+                  {activeTab === 'services'     && <ServicesCatalog services={services} onRefresh={fetchServices} />}
                   {activeTab === 'settings'     && <Settings professionals={professionals} services={services} onRefreshProfessionals={fetchProfessionals} onRefreshServices={fetchServices} session={session} />}
                   {activeTab === 'tasks'        && <Tasks professionals={professionals} session={session} onPendingCountChange={setPendingTasksCount} />}
                   {activeTab === 'bi'           && <ProfitDashboard />}

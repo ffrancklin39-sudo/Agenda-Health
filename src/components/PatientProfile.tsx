@@ -13,6 +13,7 @@ import { Patient, PaymentFull, PAYMENT_METHOD_LABELS } from '../types';
 import { phoneMatchKey, toTitleCase } from '../phoneUtils';
 import AvatarUpload from './AvatarUpload';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
+import AnamnesisTab from './AnamnesisTab';
 
 /* -------------------------------------------------
    Tipos auxiliares
@@ -46,6 +47,17 @@ interface PatientFile {
   description: string | null;
   file_size: number | null;
   record_date: string | null;
+}
+
+interface PatientAppointment {
+  id: string;
+  date_time: string | null;
+  status: string | null;
+  notes: string | null;
+  duration: number | null;
+  group_id: string | null;
+  service_name: string;
+  professional_name: string;
 }
 
 interface Props {
@@ -110,10 +122,12 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
   const [saveMsg,   setSaveMsg]       = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting]   = useState(false);
-  const [clinicalRecords, setClinicalRecords] = useState<ClinicalRecord[]>([]);
-  const [patientFiles,    setPatientFiles]    = useState<PatientFile[]>([]);
-  const [loadingRecords,  setLoadingRecords]  = useState(false);
-  const [expandedRecord,  setExpandedRecord]  = useState<string | null>(null);
+  const [clinicalRecords,      setClinicalRecords]      = useState<ClinicalRecord[]>([]);
+  const [patientFiles,         setPatientFiles]         = useState<PatientFile[]>([]);
+  const [patientAppointments,  setPatientAppointments]  = useState<PatientAppointment[]>([]);
+  const [loadingRecords,       setLoadingRecords]       = useState(false);
+  const [loadingAppointments,  setLoadingAppointments]  = useState(false);
+  const [expandedRecord,       setExpandedRecord]       = useState<string | null>(null);
 
   /* Form */
   const empty = {
@@ -196,6 +210,31 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
       setClinicalRecords(recRes.data || []);
       setPatientFiles(filesRes.data || []);
     }).finally(() => setLoadingRecords(false));
+  }, [patient?.id]);
+
+  useEffect(() => {
+    if (!patient?.id || patient.id === 'NEW') return;
+    setLoadingAppointments(true);
+    supabase
+      .from('appointments')
+      .select('id, date_time, status, notes, duration, group_id, services(name), professionals(name)')
+      .eq('patient_id', patient.id)
+      .order('date_time', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) { console.error('[PatientProfile] appointments:', error); return; }
+        const rows = (data || []).map((r: any) => ({
+          id:               r.id,
+          date_time:        r.date_time,
+          status:           r.status,
+          notes:            r.notes,
+          duration:         r.duration,
+          group_id:         r.group_id,
+          service_name:     r.services?.name     || 'Procedimento',
+          professional_name: r.professionals?.name || 'Profissional',
+        }));
+        setPatientAppointments(rows);
+      })
+      .finally(() => setLoadingAppointments(false));
   }, [patient?.id]);
 
   const ch = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -746,44 +785,9 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
           )}
 
           {/* ANAMNESE E EVOLUCOES */}
-          {activeTab === 'anamnese' && (
-            <div className="max-w-4xl mx-auto px-6 py-5">
-              {loadingRecords ? (
-                <div className="flex justify-center py-20">
-                  <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                </div>
-              ) : clinicalRecords.filter(r => r.record_type === 'anamnese' || r.record_type === 'evolucao').length === 0 ? (
-                <Placeholder icon={Activity} label="Anamnese e Evolucoes" />
-              ) : (
-                <div className="space-y-3">
-                  {clinicalRecords
-                    .filter(r => r.record_type === 'anamnese' || r.record_type === 'evolucao')
-                    .map(rec => {
-                      const meta = RECORD_LABELS[rec.record_type] || { label: rec.record_type, color: 'bg-slate-100 text-slate-600' };
-                      const isOpen = expandedRecord === rec.id;
-                      return (
-                        <div key={rec.id} className="border border-slate-200 rounded-xl overflow-hidden">
-                          <button
-                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
-                            onClick={() => setExpandedRecord(isOpen ? null : rec.id)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
-                              <span className="text-xs font-semibold text-slate-700">{rec.professional || 'Profissional'}</span>
-                              <span className="text-xs text-slate-400">{fmtDate(rec.record_date)}</span>
-                            </div>
-                            {isOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-                          </button>
-                          {isOpen && (
-                            <div className="px-4 pb-4 text-sm text-slate-700 whitespace-pre-wrap border-t border-slate-100 pt-3">
-                              {rec.content_text || 'Sem conteudo.'}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
+          {activeTab === 'anamnese' && patient?.id && patient.id !== 'NEW' && (
+            <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+              <AnamnesisTab patientId={patient.id} />
             </div>
           )}
 
@@ -804,7 +808,79 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
           {/* AGENDAMENTOS */}
           {activeTab === 'agendamentos' && (
             <div className="max-w-4xl mx-auto px-6 py-5">
-              <Placeholder icon={Calendar} label="Historico de Agendamentos" />
+              {loadingAppointments ? (
+                <div className="flex justify-center py-20">
+                  <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                </div>
+              ) : patientAppointments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
+                    <Calendar size={28} className="text-indigo-400" />
+                  </div>
+                  <p className="text-base font-bold text-slate-700">Nenhum agendamento encontrado</p>
+                  <p className="text-sm text-slate-400 mt-1 max-w-xs">Os agendamentos deste paciente aparecerão aqui assim que forem criados na Agenda.</p>
+                </div>
+              ) : (() => {
+                const now = new Date();
+                const upcoming = patientAppointments.filter(a => a.date_time && new Date(a.date_time) >= now);
+                const past     = patientAppointments.filter(a => !a.date_time || new Date(a.date_time) < now);
+
+                const STATUS_MAP: Record<string, { label: string; cls: string }> = {
+                  scheduled:  { label: 'Agendado',       cls: 'bg-sky-100 text-sky-700' },
+                  confirmed:  { label: 'Confirmado',     cls: 'bg-emerald-100 text-emerald-700' },
+                  cancelled:  { label: 'Cancelado',      cls: 'bg-rose-100 text-rose-600' },
+                  no_show:    { label: 'Não compareceu', cls: 'bg-amber-100 text-amber-700' },
+                  completed:  { label: 'Realizado',      cls: 'bg-indigo-100 text-indigo-700' },
+                };
+
+                const AptCard = ({ apt }: { apt: PatientAppointment }) => {
+                  const st  = STATUS_MAP[apt.status || ''] || { label: apt.status || '—', cls: 'bg-slate-100 text-slate-600' };
+                  const dt  = apt.date_time ? new Date(apt.date_time) : null;
+                  const cancelled = apt.status === 'cancelled' || apt.status === 'no_show';
+                  return (
+                    <div className={`flex items-start gap-4 px-4 py-3 bg-white border rounded-xl transition-colors ${cancelled ? 'opacity-50 border-slate-200' : 'border-slate-200 hover:border-slate-300'}`}>
+                      {/* Date column */}
+                      <div className="shrink-0 w-14 text-center">
+                        {dt ? (
+                          <>
+                            <p className="text-lg font-black text-slate-800 leading-none">{dt.getDate().toString().padStart(2,'0')}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">{dt.toLocaleDateString('pt-BR',{month:'short'})}</p>
+                            <p className="text-[10px] text-slate-400">{dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</p>
+                          </>
+                        ) : <p className="text-xs text-slate-400">—</p>}
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-bold text-slate-800 truncate ${cancelled ? 'line-through' : ''}`}>{apt.service_name}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{apt.professional_name}{apt.duration ? ` · ${apt.duration} min` : ''}</p>
+                        {apt.notes && <p className="text-xs text-slate-400 mt-1 line-clamp-1 italic">{apt.notes}</p>}
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${st.cls}`}>{st.label}</span>
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="space-y-6">
+                    {upcoming.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-widest text-indigo-500 mb-2">Próximos</p>
+                        <div className="space-y-2">
+                          {upcoming.map(a => <AptCard key={a.id} apt={a} />)}
+                        </div>
+                      </div>
+                    )}
+                    {past.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">Histórico</p>
+                        <div className="space-y-2">
+                          {past.map(a => <AptCard key={a.id} apt={a} />)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

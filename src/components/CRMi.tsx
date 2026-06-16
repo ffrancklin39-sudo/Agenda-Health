@@ -193,6 +193,10 @@ const CRMi: React.FC<CRMiProps> = ({
   useEffect(() => {
     const checkColdLeads = () => {
       const cooled = localPatients.filter(p => {
+        // BUGFIX: só leads do CRM podem esfriar — sem este filtro, pacientes
+        // clínicos migrados (is_lead = false) com status antigo de funil eram
+        // movidos em massa para "Leads Frios" automaticamente.
+        if (!(p as any).is_lead) return false;
         const status = (p.status || 'lead').toLowerCase();
         if (!ACTIVE_FUNNEL_STATUSES.includes(status)) return false;
         return getDaysInStage(p) >= COLD_LEAD_DAYS;
@@ -1525,3 +1529,4 @@ const CRMi: React.FC<CRMiProps> = ({
 };
 
 export default CRMi;
+

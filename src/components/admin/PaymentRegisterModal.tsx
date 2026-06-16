@@ -71,9 +71,10 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 16));
   const [notes, setNotes]           = useState('');
   const [pricing, setPricing]       = useState<PricingRow | null>(null);
-  const [saving, setSaving]         = useState(false);
-  const [saved, setSaved]           = useState(false);
-  const [error, setError]           = useState<string | null>(null);
+  const [saving, setSaving]           = useState(false);
+  const [saved, setSaved]             = useState(false);
+  const [error, setError]             = useState<string | null>(null);
+  const [dupWarning, setDupWarning]   = useState<string | null>(null);
 
   // Carrega precificação do serviço do paciente
   useEffect(() => {
@@ -117,10 +118,10 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
     return { feeAmount, taxAmount, netRevenue, commission, fixedCost, realProfit, marginPct };
   }, [amount, method, pricing]);
 
-  const handleSave = async () => {
-    if (!amount || amount <= 0) { setError('Informe o valor recebido.'); return; }
+  const doInsert = async () => {
     setSaving(true);
     setError(null);
+    setDupWarning(null);
 
     const { error: err } = await supabase.from('payments').insert({
       patient_id:      patient.id,
@@ -137,6 +138,30 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
     if (err) { setError(err.message); return; }
     setSaved(true);
     setTimeout(() => { onSuccess(); onClose(); }, 1200);
+  };
+
+  const handleSave = async () => {
+    if (!amount || amount <= 0) { setError('Informe o valor recebido.'); return; }
+
+    // Verificar pagamento duplicado no mesmo dia
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd   = new Date(); dayEnd.setHours(23, 59, 59, 999);
+    const { data: existing } = await supabase
+      .from('payments')
+      .select('id, amount, payment_date')
+      .eq('patient_id', patient.id)
+      .eq('status', 'paid')
+      .gte('payment_date', dayStart.toISOString())
+      .lte('payment_date', dayEnd.toISOString());
+
+    if (existing && existing.length > 0) {
+      setDupWarning(
+        `Já existe ${existing.length} pagamento(s) registrado(s) hoje para este paciente. Confirma mesmo assim?`
+      );
+      return;
+    }
+
+    await doInsert();
   };
 
   const marginColor = preview.marginPct >= 25 ? 'text-emerald-600'
@@ -265,20 +290,47 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
             </div>
           )}
 
-          {/* Botão */}
-          <button
-            onClick={handleSave}
-            disabled={saving || saved}
-            className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm transition-all ${
-              saved
-                ? 'bg-emerald-500 text-white'
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-60'
-            }`}
-          >
-            {saved   ? <><CheckCircle2 className="w-4 h-4" /> Pagamento registrado!</> :
-             saving  ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> :
-                       <><DollarSign className="w-4 h-4" /> Confirmar pagamento</>}
-          </button>
+          {/* Aviso de pagamento duplicado */}
+          {dupWarning && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex flex-col gap-2">
+              <div className="flex items-start gap-2 text-xs text-amber-800">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+                <span>{dupWarning}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDupWarning(null)}
+                  className="flex-1 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={doInsert}
+                  disabled={saving}
+                  className="flex-1 py-1.5 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:opacity-60"
+                >
+                  {saving ? 'Salvando...' : 'Registrar mesmo assim'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Botão principal */}
+          {!dupWarning && (
+            <button
+              onClick={handleSave}
+              disabled={saving || saved}
+              className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm transition-all ${
+                saved
+                  ? 'bg-emerald-500 text-white'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-60'
+              }`}
+            >
+              {saved   ? <><CheckCircle2 className="w-4 h-4" /> Pagamento registrado!</> :
+               saving  ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> :
+                         <><DollarSign className="w-4 h-4" /> Confirmar pagamento</>}
+            </button>
+          )}
 
           <p className="text-[10px] text-slate-400 text-center">
             O cálculo de impostos, taxas e comissão é gerado automaticamente pelo sistema.
