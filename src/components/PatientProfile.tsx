@@ -15,6 +15,7 @@ import AvatarUpload from './AvatarUpload';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
 import AnamnesisTab from './AnamnesisTab';
 import PrescriptionsTab from './PrescriptionsTab';
+import LaudosTab from './LaudosTab';
 
 /* -------------------------------------------------
    Tipos auxiliares
@@ -793,9 +794,9 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
           )}
 
           {/* LAUDOS E FORMULARIOS */}
-          {activeTab === 'laudos' && (
-            <div className="max-w-4xl mx-auto px-6 py-5">
-              <Placeholder icon={FileText} label="Laudos e Formularios" />
+          {activeTab === 'laudos' && patient?.id && patient.id !== 'NEW' && (
+            <div className="flex flex-col px-6 py-5" style={{ height: 'calc(100vh - 120px)' }}>
+              <LaudosTab patientId={patient.id} />
             </div>
           )}
 
