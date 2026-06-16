@@ -221,6 +221,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
       .eq('patient_id', patient.id)
       .order('date_time', { ascending: false })
       .then(({ data, error }) => {
+        setLoadingAppointments(false);
         if (error) { console.error('[PatientProfile] appointments:', error); return; }
         const rows = (data || []).map((r: any) => ({
           id:               r.id,
@@ -233,8 +234,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
           professional_name: r.professionals?.name || 'Profissional',
         }));
         setPatientAppointments(rows);
-      })
-      .finally(() => setLoadingAppointments(false));
+      });
   }, [patient?.id]);
 
   const ch = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
