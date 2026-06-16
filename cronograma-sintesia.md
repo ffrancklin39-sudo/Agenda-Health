@@ -161,4 +161,4 @@
 > O que evita caos na clínica vem primeiro:
 > **Agenda > Prontuário > Financeiro > Automações**
 
-Se uma ideia nova surgir no meio do caminho, anote na fase certa acima — não pare a fase atual para perseguir ela.
+Se uma ideia no

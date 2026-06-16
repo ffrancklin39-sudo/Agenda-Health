@@ -135,6 +135,9 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
   const [loadingAppointments,  setLoadingAppointments]  = useState(false);
   const [expandedRecord,       setExpandedRecord]       = useState<string | null>(null);
   const [tlFilter,             setTlFilter]             = useState('all');
+  const [uploadingFile,        setUploadingFile]        = useState(false);
+  const [previewUrl,           setPreviewUrl]           = useState<string | null>(null);
+  const [previewName,          setPreviewName]          = useState<string>('');
 
   /* Form */
   const empty = {
@@ -345,6 +348,54 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
     if (error || !data?.signedUrl) { alert('Erro ao gerar link.'); return; }
     window.open(data.signedUrl, '_blank');
   };
+
+  const handlePreview = async (file: PatientFile) => {
+    if (!file.storage_path) return;
+    const { data, error } = await supabase.storage.from('patient-files').createSignedUrl(file.storage_path, 3600);
+    if (error || !data?.signedUrl) return;
+    setPreviewUrl(data.signedUrl);
+    setPreviewName(file.file_name);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadingFile(true);
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      const folder = ['jpg','jpeg','png','gif','webp','jfif'].includes(ext) ? 'Imagens' : 'Arquivos';
+      const storagePath = `patients/${patient.id}/${folder}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await supabase.storage.from('patient-files').upload(storagePath, file, { upsert: true });
+      if (upErr) { console.error(upErr); continue; }
+      await supabase.from('patient_files').insert({
+        patient_id: patient.id,
+        file_name: file.name,
+        storage_path: storagePath,
+        file_type: ext,
+        folder,
+        file_size: file.size,
+        uploaded: true,
+        record_date: new Date().toISOString(),
+      });
+    }
+    // Refresh
+    const { data } = await supabase.from('patient_files')
+      .select('id, file_name, file_type, folder, storage_path, description, file_size, record_date')
+      .eq('patient_id', patient.id).order('record_date', { ascending: false });
+    setPatientFiles(data || []);
+    setUploadingFile(false);
+    e.target.value = '';
+  };
+
+  const fileIcon = (type: string | null) => {
+    const t = (type || '').toLowerCase();
+    if (t === 'pdf') return <FileText size={16} className="text-red-400 flex-shrink-0" />;
+    if (['jpg','jpeg','png','gif','webp','jfif'].includes(t)) return <FileImage size={16} className="text-sky-400 flex-shrink-0" />;
+    if (['doc','docx'].includes(t)) return <FileText size={16} className="text-blue-500 flex-shrink-0" />;
+    return <Paperclip size={16} className="text-slate-400 flex-shrink-0" />;
+  };
+
+  const isImage = (type: string | null) => ['jpg','jpeg','png','gif','webp','jfif'].includes((type||'').toLowerCase());
 
   const fmtDate = (iso: string | null) => {
     if (!iso) return '-';
@@ -894,34 +945,106 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
           {/* ARQUIVOS */}
           {activeTab === 'arquivos' && (
             <div className="max-w-4xl mx-auto px-6 py-5">
-              {loadingRecords ? (
-                <div className="flex justify-center py-20">
-                  <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                </div>
-              ) : patientFiles.length === 0 ? (
-                <Placeholder icon={Paperclip} label="Arquivos do Paciente" />
-              ) : (
-                <div className="space-y-2">
-                  {patientFiles.map(file => (
-                    <div key={file.id} className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 hover:bg-white transition-colors group">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <FileImage size={16} className="text-slate-400 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 truncate">{file.file_name}</p>
-                          <p className="text-xs text-slate-400">{file.folder || 'Geral'} {file.file_size ? '· ' + fmtSize(file.file_size) : ''} {file.record_date ? '· ' + fmtDate(file.record_date) : ''}</p>
-                        </div>
+              {/* Preview modal */}
+              {previewUrl && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setPreviewUrl(null)}>
+                  <div className="bg-white rounded-2xl overflow-hidden shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{previewName}</p>
+                      <div className="flex items-center gap-2">
+                        <a href={previewUrl} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline flex items-center gap-1"><Download size={12}/> Baixar</a>
+                        <button onClick={() => setPreviewUrl(null)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500"><X size={16}/></button>
                       </div>
-                      <button
-                        onClick={() => handleDownload(file)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-600"
-                        title="Baixar"
-                      >
-                        <Download size={14} />
-                      </button>
                     </div>
-                  ))}
+                    <div className="overflow-auto flex-1 flex items-center justify-center bg-slate-50 p-4">
+                      {previewName.toLowerCase().endsWith('.pdf') ? (
+                        <iframe src={previewUrl} className="w-full h-[70vh] rounded-lg" title={previewName} />
+                      ) : (
+                        <img src={previewUrl} alt={previewName} className="max-w-full max-h-[70vh] rounded-lg object-contain" />
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-slate-400" />
+                  <span className="font-bold text-slate-800">Arquivos e Documentos</span>
+                  {patientFiles.length > 0 && <span className="text-xs text-slate-400">{patientFiles.length} arquivo{patientFiles.length !== 1 ? 's' : ''}</span>}
+                </div>
+                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-semibold cursor-pointer transition-colors ${uploadingFile ? 'bg-slate-100 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}>
+                  {uploadingFile ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  {uploadingFile ? 'Enviando...' : 'Adicionar'}
+                  <input type="file" className="hidden" multiple accept="*/*" onChange={handleFileUpload} disabled={uploadingFile} />
+                </label>
+              </div>
+
+              {loadingRecords ? (
+                <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-indigo-500 animate-spin" /></div>
+              ) : patientFiles.length === 0 ? (
+                <label className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors text-center">
+                  <Paperclip className="w-10 h-10 text-slate-300 mb-3" />
+                  <p className="font-semibold text-slate-500 text-sm">Nenhum arquivo ainda</p>
+                  <p className="text-xs text-slate-400 mt-1">Clique ou arraste arquivos aqui</p>
+                  <input type="file" className="hidden" multiple accept="*/*" onChange={handleFileUpload} disabled={uploadingFile} />
+                </label>
+              ) : (() => {
+                const folders = Array.from(new Set(patientFiles.map(f => f.folder || 'Geral'))).sort();
+                return (
+                  <div className="space-y-5">
+                    {folders.map(folder => {
+                      const group = patientFiles.filter(f => (f.folder || 'Geral') === folder);
+                      return (
+                        <div key={folder}>
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                            <span className="w-4 h-px bg-slate-200 inline-block" />{folder}<span className="text-slate-300">({group.length})</span>
+                          </p>
+                          <div className="space-y-1.5">
+                            {group.map(file => (
+                              <div key={file.id} className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 hover:bg-white transition-colors group">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {fileIcon(file.file_type)}
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-800 truncate">{file.file_name}</p>
+                                    <p className="text-xs text-slate-400">
+                                      {(file.file_type || '').toUpperCase() || 'Arquivo'}
+                                      {file.file_size ? ' · ' + fmtSize(file.file_size) : ''}
+                                      {file.record_date ? ' · ' + fmtDate(file.record_date) : ''}
+                                      {!file.storage_path && <span className="ml-2 text-amber-500">· aguardando upload</span>}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  {file.storage_path && (isImage(file.file_type) || (file.file_type || '') === 'pdf') && (
+                                    <button
+                                      onClick={() => handlePreview(file)}
+                                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                                      title="Visualizar"
+                                    >
+                                      <Image size={14} />
+                                    </button>
+                                  )}
+                                  {file.storage_path && (
+                                    <button
+                                      onClick={() => handleDownload(file)}
+                                      className="p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-600"
+                                      title="Baixar"
+                                    >
+                                      <Download size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -956,8 +1079,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
                   </div>
                 ) : visible.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mb-3">
-                      <Clock className="w-7 h-7 text-slate-300" />
+                    <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mb-3">                      <Clock className="w-7 h-7 text-slate-300" />
                     </div>
                     <p className="font-bold text-slate-600">Nenhum registro encontrado</p>
                     <p className="text-sm text-slate-400 mt-1">Os registros clínicos aparecerão aqui conforme forem criados.</p>
