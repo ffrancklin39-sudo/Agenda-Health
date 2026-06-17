@@ -100,6 +100,12 @@ export interface Patient {
   created_at?: string;
   updated_at?: string;
   stage_entered_at?: string;
+
+  // IA — Camada 2 (resumo + lead quente, Gemini)
+  ai_summary?: string;
+  ai_summary_updated_at?: string;
+  lead_temperature?: 'quente' | 'morno' | 'frio' | string;
+  lead_temperature_reason?: string;
 }
 
 export interface Professional {

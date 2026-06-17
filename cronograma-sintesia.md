@@ -34,10 +34,11 @@
 
 **🟡 Camada 2 — Inteligência conversacional (Gemini/Groq já instalados)**
 *Previsão: 20 e 23 de junho*
-- [ ] Resumo automático do histórico do paciente `[Jun 20]`
-- [ ] Análise de interesse/urgência (IA lê contexto e sinaliza "lead quente") `[Jun 23]`
+- [x] Resumo automático do histórico do paciente ✅ 2026-06-16
+- [x] Análise de interesse/urgência (IA lê contexto e sinaliza "lead quente") ✅ 2026-06-16
 - [ ] Sugestão de próxima melhor ação `[Jun 23]`
 - [ ] Rascunho de mensagem personalizada para revisão humana `[Jun 23]`
+- [x] Captura automática de leads — WhatsApp via n8n (workflow da Sofia) ✅ 2026-06-16
 
 **🔴 Camada 3 — Automação autônoma (depende da Sofia ativa — Fase 3)**
 - [ ] Inbox omnichannel (WhatsApp + Instagram + site)
@@ -161,4 +162,4 @@
 > O que evita caos na clínica vem primeiro:
 > **Agenda > Prontuário > Financeiro > Automações**
 
-Se uma ideia no
+Se uma ideia nova s

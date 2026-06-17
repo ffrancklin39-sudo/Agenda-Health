@@ -6,8 +6,10 @@ import { phoneMatchKey } from '../phoneUtils';
 import {
   Phone, MessageCircle, DollarSign, Check, UserPlus, BellRing, Bell,
   Edit2, Trash2, AlarmClock, AlignLeft, X, Stethoscope, Search, Clock, History,
+  Sparkles, Flame, Thermometer, Snowflake, RefreshCw,
 } from 'lucide-react';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
+import { analyzePatient, isGeminiConfigured } from '../services/geminiService';
 
 // ─── CONFIGURAÇÃO DAS COLUNAS ────────────────────────────────────────────────
 const COLUMNS: Record<string, { title: string; color: string; text: string; border: string; accent: string; icon: string }> = {
@@ -51,6 +53,13 @@ const EVENT_STYLES: Record<string, { label: string; dot: string }> = {
   payment:      { label: 'Pagamento',     dot: 'bg-emerald-400' },
   follow_up:    { label: 'Lembrete',      dot: 'bg-amber-400' },
   other:        { label: 'Atualização',   dot: 'bg-slate-400' },
+};
+
+// ─── TEMPERATURA DO LEAD (IA — Camada 2) ────────────────────────────────────
+const TEMPERATURE_STYLES: Record<string, { label: string; color: string; bg: string; Icon: typeof Flame }> = {
+  quente: { label: 'Quente', color: 'text-red-600',    bg: 'bg-red-50 border-red-200',       Icon: Flame },
+  morno:  { label: 'Morno',  color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200',   Icon: Thermometer },
+  frio:   { label: 'Frio',   color: 'text-sky-600',    bg: 'bg-sky-50 border-sky-200',       Icon: Snowflake },
 };
 
 // ─── PROPS ────────────────────────────────────────────────────────────────────
@@ -112,6 +121,10 @@ const CRMi: React.FC<CRMiProps> = ({
   const [historyPatient, setHistoryPatient] = useState<Patient | null>(null);
   const [historyEvents, setHistoryEvents] = useState<PatientHistory[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // IA — Camada 2 (resumo + lead quente)
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Feedback visual
   const [confirmSuccess, setConfirmSuccess] = useState<string | null>(null);
@@ -251,7 +264,9 @@ const CRMi: React.FC<CRMiProps> = ({
     const startThisWeek = new Date(now.getTime() - 7 * DAY);
     const startLastWeek = new Date(now.getTime() - 14 * DAY);
 
-    const withDate = localPatients.filter(p => !!p.created_at);
+    // Só leads reais do CRM — sem este filtro, pacientes clínicos migrados
+    // (is_lead = false) entravam na comparação e geravam alertas falsos.
+    const withDate = localPatients.filter(p => (p as any).is_lead && !!p.created_at);
     const thisWeek = withDate.filter(p => new Date(p.created_at as string) >= startThisWeek);
     const lastWeek = withDate.filter(p => {
       const d = new Date(p.created_at as string);
@@ -348,6 +363,32 @@ const CRMi: React.FC<CRMiProps> = ({
       setHistoryEvents([]);
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  // Gera (ou regenera) o resumo IA + temperatura do lead e salva em `patients`
+  // para não precisar chamar o Gemini de novo a cada abertura do painel.
+  const generateAISummary = async (patient: Patient) => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await analyzePatient(patient, historyEvents);
+      const updates: Partial<Patient> = {
+        ai_summary: result.summary,
+        ai_summary_updated_at: new Date().toISOString(),
+        lead_temperature: result.temperature,
+        lead_temperature_reason: result.temperatureReason,
+      };
+      const { error } = await supabase.from('patients').update(updates).eq('id', patient.id);
+      if (error) throw error;
+
+      setHistoryPatient(prev => (prev ? { ...prev, ...updates } : prev));
+      setLocalPatients(prev => prev.map(p => (String(p.id) === String(patient.id) ? { ...p, ...updates } : p)));
+    } catch (err: any) {
+      console.error('Erro ao gerar resumo IA', err);
+      setAiError(err?.message || 'Não foi possível gerar o resumo agora.');
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -1013,6 +1054,15 @@ const CRMi: React.FC<CRMiProps> = ({
                                             {leadScore.label}
                                           </span>
                                         )}
+                                        {patient.lead_temperature && TEMPERATURE_STYLES[patient.lead_temperature] && (
+                                          <span
+                                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${TEMPERATURE_STYLES[patient.lead_temperature].color} ${TEMPERATURE_STYLES[patient.lead_temperature].bg}`}
+                                            title={patient.lead_temperature_reason || 'Análise de IA'}
+                                          >
+                                            {React.createElement(TEMPERATURE_STYLES[patient.lead_temperature].Icon, { size: 9 })}
+                                            {TEMPERATURE_STYLES[patient.lead_temperature].label}
+                                          </span>
+                                        )}
                                         {patient.reminderDate && (
                                           <BellRing size={13} className="text-amber-500 mt-0.5" />
                                         )}
@@ -1461,72 +1511,6 @@ const CRMi: React.FC<CRMiProps> = ({
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
-              {loadingHistory && (
-                <p className="text-sm text-slate-400 text-center py-8">Carregando histórico...</p>
-              )}
-              {!loadingHistory && historyEvents.length === 0 && (
-                <div className="text-center py-8">
-                  <span className="text-2xl opacity-30">🕓</span>
-                  <p className="text-sm text-slate-400 mt-2">Nenhum evento registrado ainda.</p>
-                  <p className="text-[11px] text-slate-300 mt-1">
-                    A partir de agora, mudanças de status e lembretes deste lead aparecem aqui automaticamente.
-                  </p>
-                </div>
-              )}
-              {!loadingHistory && historyEvents.map((ev, idx) => {
-                const style = EVENT_STYLES[ev.event_type] || EVENT_STYLES.other;
-                const isLast = idx === historyEvents.length - 1;
-                const when = ev.date || ev.created_at;
-                return (
-                  <div key={ev.id} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${style.dot}`} />
-                      {!isLast && <div className="flex-1 w-px bg-slate-100 my-0.5" />}
-                    </div>
-                    <div className={isLast ? 'pb-1' : 'pb-4'}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        {style.label}
-                        {when && (
-                          <span className="font-medium normal-case tracking-normal text-slate-400">
-                            {' · '}
-                            {new Date(when).toLocaleString('pt-BR', {
-                              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-                            })}
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-sm text-slate-700 mt-0.5 leading-snug">{ev.notes}</p>
-                      {ev.created_by && (
-                        <p className="text-[10px] text-slate-400 mt-0.5">por {ev.created_by}</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast de sucesso (atendimento confirmado) */}
-      {confirmSuccess && (
-        <div className="fixed bottom-6 right-6 z-[300] bg-emerald-500 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-in slide-in-from-bottom-4 duration-300">
-          <Check size={16} />
-          <span className="text-sm font-bold">{confirmSuccess} — atendimento confirmado!</span>
-        </div>
-      )}
-
-      {/* Toast de lead esfriado */}
-      {coldLeadNotice && (
-        <div className="fixed bottom-6 right-6 z-[300] bg-slate-700 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-in slide-in-from-bottom-4 duration-300 max-w-sm">
-          <span className="text-base shrink-0">🧊</span>
-          <span className="text-sm font-semibold leading-snug">{coldLeadNotice}</span>
-        </div>
-      )}
-
-    </div>
-  );
-};
-
-export default CRMi;
-
+              {/* Resumo IA + Lead Quente (Camada 2) */}
+              <div className="mb-5 p-3 rounded-xl border border-indigo-100 bg-indigo-50/40">
+                <div className="flex items-center justify-between g
