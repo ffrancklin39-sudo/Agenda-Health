@@ -15,6 +15,12 @@ scripts/migration_output/
 # Workflows n8n com credenciais
 Fluxo Novo-Cloude-n8n.json
 sofia-sdr-n8n.json
+Fluxo Novo-Cloude.json
+Sofia 2.0 - TESTE.json
+
+# Scripts pontuais com identificadores reais de paciente (LGPD)
+sql/check_duplicate_refs.sql
+sql/delete_lid_duplicates.sql
 
 # Sistema
 .DS_Store

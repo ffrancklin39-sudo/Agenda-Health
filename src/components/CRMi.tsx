@@ -1513,4 +1513,126 @@ const CRMi: React.FC<CRMiProps> = ({
             <div className="flex-1 overflow-y-auto p-5">
               {/* Resumo IA + Lead Quente (Camada 2) */}
               <div className="mb-5 p-3 rounded-xl border border-indigo-100 bg-indigo-50/40">
-                <div className="flex items-center justify-between g
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 flex items-center gap-1.5">
+                    <Sparkles size={12} />
+                    Resumo IA
+                  </p>
+                  {!isGeminiConfigured() ? (
+                    <span className="text-[10px] text-slate-400">Chave do Gemini não configurada</span>
+                  ) : (
+                    <button
+                      onClick={() => historyPatient && generateAISummary(historyPatient)}
+                      disabled={aiLoading}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50 transition-colors"
+                    >
+                      <RefreshCw size={11} className={aiLoading ? 'animate-spin' : ''} />
+                      {aiLoading ? 'Gerando...' : historyPatient?.ai_summary ? 'Atualizar' : 'Gerar resumo'}
+                    </button>
+                  )}
+                </div>
+
+                {aiError && <p className="text-[11px] text-red-500">{aiError}</p>}
+
+                {!aiError && historyPatient?.ai_summary && (
+                  <>
+                    <p className="text-sm text-slate-700 leading-snug">{historyPatient.ai_summary}</p>
+                    {historyPatient.lead_temperature && TEMPERATURE_STYLES[historyPatient.lead_temperature] && (
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <span
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold ${TEMPERATURE_STYLES[historyPatient.lead_temperature].color} ${TEMPERATURE_STYLES[historyPatient.lead_temperature].bg}`}
+                        >
+                          {React.createElement(TEMPERATURE_STYLES[historyPatient.lead_temperature].Icon, { size: 10 })}
+                          Lead {TEMPERATURE_STYLES[historyPatient.lead_temperature].label}
+                        </span>
+                        {historyPatient.lead_temperature_reason && (
+                          <span className="text-[11px] text-slate-400">{historyPatient.lead_temperature_reason}</span>
+                        )}
+                      </div>
+                    )}
+                    {historyPatient.ai_summary_updated_at && (
+                      <p className="text-[10px] text-slate-300 mt-1.5">
+                        Atualizado em {new Date(historyPatient.ai_summary_updated_at).toLocaleString('pt-BR', {
+                          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                        })}
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {!aiError && !historyPatient?.ai_summary && !aiLoading && isGeminiConfigured() && (
+                  <p className="text-[11px] text-slate-400">
+                    Ainda não gerado. Clique em "Gerar resumo" para a IA analisar o histórico deste lead.
+                  </p>
+                )}
+              </div>
+
+              {loadingHistory && (
+                <p className="text-sm text-slate-400 text-center py-8">Carregando histórico...</p>
+              )}
+              {!loadingHistory && historyEvents.length === 0 && (
+                <div className="text-center py-8">
+                  <span className="text-2xl opacity-30">🕓</span>
+                  <p className="text-sm text-slate-400 mt-2">Nenhum evento registrado ainda.</p>
+                  <p className="text-[11px] text-slate-300 mt-1">
+                    A partir de agora, mudanças de status e lembretes deste lead aparecem aqui automaticamente.
+                  </p>
+                </div>
+              )}
+              {!loadingHistory && historyEvents.map((ev, idx) => {
+                const style = EVENT_STYLES[ev.event_type] || EVENT_STYLES.other;
+                const isLast = idx === historyEvents.length - 1;
+                const when = ev.date || ev.created_at;
+                return (
+                  <div key={ev.id} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${style.dot}`} />
+                      {!isLast && <div className="flex-1 w-px bg-slate-100 my-0.5" />}
+                    </div>
+                    <div className={isLast ? 'pb-1' : 'pb-4'}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {style.label}
+                        {when && (
+                          <span className="font-medium normal-case tracking-normal text-slate-400">
+                            {' · '}
+                            {new Date(when).toLocaleString('pt-BR', {
+                              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                            })}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-sm text-slate-700 mt-0.5 leading-snug">{ev.notes}</p>
+                      {ev.created_by && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">por {ev.created_by}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast de sucesso (atendimento confirmado) */}
+      {confirmSuccess && (
+        <div className="fixed bottom-6 right-6 z-[300] bg-emerald-500 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-in slide-in-from-bottom-4 duration-300">
+          <Check size={16} />
+          <span className="text-sm font-bold">{confirmSuccess} — atendimento confirmado!</span>
+        </div>
+      )}
+
+      {/* Toast de lead esfriado */}
+      {coldLeadNotice && (
+        <div className="fixed bottom-6 right-6 z-[300] bg-slate-700 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-in slide-in-from-bottom-4 duration-300 max-w-sm">
+          <span className="text-base shrink-0">🧊</span>
+          <span className="text-sm font-semibold leading-snug">{coldLeadNotice}</span>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+export default CRMi;
+

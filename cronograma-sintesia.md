@@ -1,26 +1,30 @@
 # Cronograma SintesIA — Plano Completo (As 4 Pontas)
 
-**Atualizado em:** 2026-06-15
-**Como usar:** siga as fases NA ORDEM. Marque `[x]` quando terminar. Não pule fases — cada uma destrava a próxima.
+**Atualizado em:** 2026-06-22 (reorganizado após o desvio da Sofia)
+**Como usar:** siga as fases NA ORDEM. Marque `[x]` quando terminar. Não pule fases — cada una destrava a próxima.
 **Ritmo:** Seg–Sáb · ~3h/dia · 1 sessão = 1 dia de trabalho
 
 ---
 
-## 📍 Onde você está agora (Jun 15, 2026)
+## 📍 Onde você está agora (Jun 22, 2026)
 
-**Funcionando:** Dashboard, CRM Inteligente (Camada 1 completa), Agenda, Pacientes, Tarefas, Financeiro (5 sub-abas), BI & Margem, Relatórios (11), Configurações, Serviços (CRUD), Anamnese (builder + aba no perfil).
+**Funcionando:** Dashboard, CRM Inteligente (Camada 1 + boa parte da Camada 2), Agenda, Pacientes, Tarefas, Financeiro (5 sub-abas), BI & Margem, Relatórios (11), Configurações, Serviços (CRUD), Anamnese (builder + aba no perfil), **Sofia 2.0 publicada em produção** (captura de lead sempre ativa, resposta da IA com kill-switch desligado).
 
-**Pendente na Fase 1:** abas Prescrições, Documentos/Exames e Linha do Tempo no perfil do paciente + CRM Camada 2 (IA conversacional).
+**⚠️ Por que as datas abaixo mudaram:** entre 17 e 22/06 a Sofia regrediu (respondia tudo, atropelava a Nayla) e você decidiu refazer a arquitetura do zero em vez de remendar — 3º incidente do mesmo bug. Isso consumiu praticamente toda a "Sem 1" original (que era pra ser Ficha do Paciente) e parou a captura de leads no meio do caminho. Foi a prioridade certa (sem captura de lead não tem CRM), mas o cronograma não previa esse trabalho — por isso a Fase 1 está sendo reorganizada com ~5 dias de atraso real.
 
-**⚠️ Ação imediata:** rodar `sql/services_add_description.sql` no Supabase SQL Editor para habilitar o campo Descrição nos serviços.
+**Pendente na Fase 1 (não tocado ainda):** abas Prescrições, Documentos/Exames e Linha do Tempo no perfil do paciente.
 
-**⚠️ Commit pendente:** muita coisa não commitada desde 64ec680 — AnamnesisTab, PatientProfile, ServicesCatalog, Dashboard, PaymentRegisterModal.
+**Pendente na Camada 2:** sugestão de próxima melhor ação + rascunho de mensagem (IA).
+
+**⚠️ Ação imediata (ainda aberta):** rodar `sql/services_add_description.sql` no Supabase SQL Editor para habilitar o campo Descrição nos serviços.
+
+**⚠️ Commit pendente (ainda aberto — você mesmo levantou essa dúvida):** muita coisa não commitada desde `64ec680` — AnamnesisTab, PatientProfile, ServicesCatalog, Dashboard, PaymentRegisterModal. Some a isso tudo que foi feito na Sofia 2.0 esta semana (workflow, migrações SQL, docs de arquitetura) — vale um commit grande de checkpoint antes de seguir.
 
 ---
 
 ## FASE 1 — Fechar a base operacional
 *Objetivo: ninguém trava no dia a dia da clínica.*
-*🏁 Meta: 24 de junho de 2026*
+*🏁 Meta: ~~24 de junho~~ → 29 de junho de 2026 (ajustado pelo desvio da Sofia)*
 
 ### CRM Inteligente
 
@@ -33,17 +37,24 @@
 - [x] Atribuição de responsável por lead
 
 **🟡 Camada 2 — Inteligência conversacional (Gemini/Groq já instalados)**
-*Previsão: 20 e 23 de junho*
 - [x] Resumo automático do histórico do paciente ✅ 2026-06-16
 - [x] Análise de interesse/urgência (IA lê contexto e sinaliza "lead quente") ✅ 2026-06-16
-- [ ] Sugestão de próxima melhor ação `[Jun 23]`
-- [ ] Rascunho de mensagem personalizada para revisão humana `[Jun 23]`
-- [x] Captura automática de leads — WhatsApp via n8n (workflow da Sofia) ✅ 2026-06-16
+- [x] Captura automática de leads — WhatsApp via n8n ✅ 2026-06-16 (depois refeita do zero, ver abaixo)
+- [ ] Sugestão de próxima melhor ação `[Jun 27]`
+- [ ] Rascunho de mensagem personalizada para revisão humana `[Jun 27]`
 
-**🔴 Camada 3 — Automação autônoma (depende da Sofia ativa — Fase 3)**
+**⚪ Fora do plano original — redesenho completo da Sofia (3º incidente do bug @lid/handoff)**
+- [x] Diagnóstico da causa raiz (resolução de identidade espalhada pelo fluxo) ✅ 2026-06-17
+- [x] Arquitetura definitiva documentada (`docs/sofia-arquitetura-definitiva.md`) ✅ 2026-06-17
+- [x] Separação `CAPTURA_LEAD` (sempre ativa) / `SOFIA_RESPONDE` (opcional, kill-switch) ✅ 2026-06-18
+- [x] Testes da Fase 1 do plano de testes (cenários 1–7) ✅ 2026-06-18
+- [x] Publicação em produção como "Sofia 2.0 - Produção", Sofia OFF via `SOFIA_GLOBAL_ATIVA` ✅ 2026-06-22
+- [ ] Validar captura de lead real (primeiro contato de paciente) `[Jun 23]`
+
+**🔴 Camada 3 — Automação autônoma (parcialmente destravada agora que a Sofia 2.0 está publicada)**
 - [ ] Inbox omnichannel (WhatsApp + Instagram + site)
 - [ ] Agente autônomo cuidando do funil (Sofia agenda, confirma, move lead)
-- [ ] Projeto Lazaro Parte B (nutrição contínua de leads frios)
+- [ ] Projeto Lazaro Parte B (nutrição contínua de leads frios) — ver Fase 3, pode adiantar agora que `conversation_state` já existe
 
 ---
 
@@ -61,14 +72,14 @@
 ---
 
 ### Ficha completa do paciente (PatientProfile)
-*Previsão: 16–19 de junho*
+*Previsão original: 16–19 de junho → adiada para 23–26 de junho (não tocada por causa da Sofia)*
 
 - [x] Anamnese estruturada — builder drag-drop + aba de preenchimento ✅ 2026-06-09
 - [x] Histórico de agendamentos — aba com dados reais do Supabase ✅ 2026-06-09
 - [x] Evolução clínica — coberta pelos templates do tipo "evolucao" no builder ✅
-- [ ] Prescrições e orientações `[Jun 16]`
-- [ ] Linha do tempo clínica unificada `[Jun 17]`
-- [ ] Documentos e exames (upload + visualização via Supabase Storage) `[Jun 18–19]`
+- [ ] Prescrições e orientações `[Jun 23]`
+- [ ] Linha do tempo clínica unificada `[Jun 24]`
+- [ ] Documentos e exames (upload + visualização via Supabase Storage) `[Jun 25–26]`
 
 ---
 
@@ -162,4 +173,4 @@
 > O que evita caos na clínica vem primeiro:
 > **Agenda > Prontuário > Financeiro > Automações**
 
-Se uma ideia nova s
+Se uma ideia nova surgir no meio do caminho, anote na fase certa acima — não pare a fase atual para perseguir ela.
