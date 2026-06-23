@@ -132,6 +132,16 @@ export interface Professional {
   updated_at?: string;
 }
 
+/** Um intervalo de atendimento (ex: 09:00–12:00). Um dia pode ter vários,
+ *  permitindo representar intervalo de almoço (09-12 e 14-19, por exemplo). */
+export interface ProfessionalScheduleSlot {
+  id?: string;
+  professional_id: string;
+  day_of_week: number; // 0=domingo ... 6=sábado (igual Date.getDay())
+  start_time: string;  // 'HH:MM' ou 'HH:MM:SS'
+  end_time: string;
+}
+
 export interface ClinicService {
   id: string;
   name: string;

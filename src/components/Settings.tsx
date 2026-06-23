@@ -14,7 +14,12 @@ type ProfTab = 'dados' | 'horarios';
 type Toast = { type: 'success' | 'error'; msg: string } | null;
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-const blankSchedule = () => DAYS.map(d => ({ day: d, active: d !== 'Domingo', start: '08:00', end: '18:00' }));
+// day_of_week segue a convenção do Date.getDay() do JS: 0=domingo ... 6=sábado
+const DOW_BY_INDEX = [1, 2, 3, 4, 5, 6, 0];
+type Interval = { start: string; end: string };
+type ScheduleDay = { day: string; dow: number; active: boolean; intervals: Interval[] };
+const blankSchedule = (): ScheduleDay[] =>
+  DAYS.map((d, i) => ({ day: d, dow: DOW_BY_INDEX[i], active: d !== 'Domingo', intervals: [{ start: '08:00', end: '18:00' }] }));
 
 const PROF_COLORS: Record<string, { bg: string; border: string; label: string }> = {
   blue:    { bg: '#dbeafe', border: '#3b82f6', label: 'Azul'   },
@@ -68,6 +73,31 @@ const Settings: React.FC<Props> = ({
   const [schedule, setSchedule]         = useState(blankSchedule());
   const [profPhoto, setProfPhoto]       = useState<string>('');
 
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+
+  const loadSchedule = async (profId: string) => {
+    setLoadingSchedule(true);
+    try {
+      const { data } = await supabase.from('professional_schedules')
+        .select('*').eq('professional_id', profId).order('start_time');
+      const byDow: Record<number, Interval[]> = {};
+      (data || []).forEach((r: any) => {
+        (byDow[r.day_of_week] ||= []).push({ start: String(r.start_time).slice(0, 5), end: String(r.end_time).slice(0, 5) });
+      });
+      setSchedule(DAYS.map((d, i) => {
+        const dow = DOW_BY_INDEX[i];
+        const intervals = byDow[dow];
+        return {
+          day: d, dow,
+          active: !!intervals && intervals.length > 0,
+          intervals: intervals && intervals.length > 0 ? intervals : [{ start: '08:00', end: '18:00' }],
+        };
+      }));
+    } finally {
+      setLoadingSchedule(false);
+    }
+  };
+
   const openNewProf  = () => { setProfForm(blankProf()); setEditingProf(null); setProfPhoto(''); setSchedule(blankSchedule()); setProfTab('dados'); setShowProfForm(true); };
   const openEditProf = (p: Professional) => {
     setEditingProf(p);
@@ -83,8 +113,40 @@ const Settings: React.FC<Props> = ({
       rqe: p.rqe || '', observation: p.observation || '', active: p.active ?? true,
     });
     setShowProfForm(true);
+    loadSchedule(p.id);
   };
   const cancelProfForm = () => { setShowProfForm(false); setEditingProf(null); };
+
+  /** Adiciona um novo intervalo num dia, sugerindo início = fim do último intervalo (ajuda a montar o "depois do almoço"). */
+  const addInterval = (dayIdx: number) => {
+    setSchedule(s => s.map((r, j) => {
+      if (j !== dayIdx) return r;
+      const last = r.intervals[r.intervals.length - 1];
+      const suggestedStart = last?.end || '13:00';
+      return { ...r, intervals: [...r.intervals, { start: suggestedStart, end: '18:00' }] };
+    }));
+  };
+  const removeInterval = (dayIdx: number, intIdx: number) => {
+    setSchedule(s => s.map((r, j) => j === dayIdx ? { ...r, intervals: r.intervals.filter((_, k) => k !== intIdx) } : r));
+  };
+  const updateInterval = (dayIdx: number, intIdx: number, field: 'start' | 'end', value: string) => {
+    setSchedule(s => s.map((r, j) => j === dayIdx
+      ? { ...r, intervals: r.intervals.map((iv, k) => k === intIdx ? { ...iv, [field]: value } : iv) }
+      : r));
+  };
+
+  /** Substitui os horários salvos do profissional pelos do estado atual (apaga tudo e reinsere — mais simples que diff). */
+  const saveSchedule = async (profId: string) => {
+    await supabase.from('professional_schedules').delete().eq('professional_id', profId);
+    const rows = schedule.flatMap(d => d.active
+      ? d.intervals.filter(iv => iv.start && iv.end && iv.start < iv.end)
+          .map(iv => ({ professional_id: profId, day_of_week: d.dow, start_time: iv.start, end_time: iv.end }))
+      : []);
+    if (rows.length > 0) {
+      const { error } = await supabase.from('professional_schedules').insert(rows);
+      if (error) throw error;
+    }
+  };
 
   const saveProf = async () => {
     if (!profForm.name.trim()) { showToast('error', 'Nome e obrigatorio'); return; }
@@ -102,15 +164,17 @@ const Settings: React.FC<Props> = ({
         observation: profForm.observation || null, active: profForm.active,
         photo_url: profPhoto || null,
       };
+      let profId = editingProf?.id;
       if (editingProf) {
         const { error } = await supabase.from('professionals').update(payload).eq('id', editingProf.id);
         if (error) throw error;
-        showToast('success', 'Profissional atualizado!');
       } else {
-        const { error } = await supabase.from('professionals').insert(payload);
+        const { data, error } = await supabase.from('professionals').insert(payload).select('id').single();
         if (error) throw error;
-        showToast('success', 'Profissional adicionado!');
+        profId = data?.id;
       }
+      if (profId) await saveSchedule(profId);
+      showToast('success', editingProf ? 'Profissional atualizado!' : 'Profissional adicionado!');
       cancelProfForm();
       onRefreshProfessionals();
     } catch (err: any) {
@@ -410,38 +474,58 @@ const Settings: React.FC<Props> = ({
                 {/* ── ABA: HORÁRIOS ── */}
                 {profTab === 'horarios' && (
                   <div>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-4">Horários de Atendimento</p>
-                    <div className="space-y-2">
-                      {schedule.map((row, i) => (
-                        <div key={row.day} className="flex items-center gap-3">
-                          <button type="button"
-                            onClick={() => setSchedule(s => s.map((r, j) => j === i ? { ...r, active: !r.active } : r))}
-                            className={`w-5 h-5 rounded flex items-center justify-center border transition-all shrink-0
-                              ${row.active ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 bg-white'}`}>
-                            {row.active && <Check className="w-3 h-3" />}
-                          </button>
-                          <span className={`text-xs w-20 shrink-0 ${row.active ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
-                            {row.day}
-                          </span>
-                          {row.active ? (
-                            <div className="flex items-center gap-2 flex-1">
-                              <input type="time" value={row.start}
-                                onChange={e => setSchedule(s => s.map((r, j) => j === i ? { ...r, start: e.target.value } : r))}
-                                className="premium-input py-1.5 text-sm w-28" />
-                              <span className="text-slate-400 text-xs">até</span>
-                              <input type="time" value={row.end}
-                                onChange={e => setSchedule(s => s.map((r, j) => j === i ? { ...r, end: e.target.value } : r))}
-                                className="premium-input py-1.5 text-sm w-28" />
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-400 italic">Não atende</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-slate-400 mt-4">
-                      * Os horários são salvos localmente por enquanto. Integração com banco de dados em breve.
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Horários de Atendimento</p>
+                    <p className="text-[11px] text-slate-400 mb-4">
+                      Adicione mais de um intervalo no mesmo dia para representar o horário de almoço (ex: 09:00–12:00 e 14:00–19:00). Fora desses intervalos a agenda aparece bloqueada para este profissional.
                     </p>
+                    {loadingSchedule ? (
+                      <div className="flex items-center gap-2 text-xs text-slate-400 py-4">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando horários...
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {schedule.map((row, i) => (
+                          <div key={row.day} className="flex items-start gap-3">
+                            <button type="button"
+                              onClick={() => setSchedule(s => s.map((r, j) => j === i ? { ...r, active: !r.active } : r))}
+                              className={`w-5 h-5 rounded flex items-center justify-center border transition-all shrink-0 mt-0.5
+                                ${row.active ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 bg-white'}`}>
+                              {row.active && <Check className="w-3 h-3" />}
+                            </button>
+                            <span className={`text-xs w-20 shrink-0 mt-1 ${row.active ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
+                              {row.day}
+                            </span>
+                            {row.active ? (
+                              <div className="flex-1 space-y-1.5">
+                                {row.intervals.map((iv, k) => (
+                                  <div key={k} className="flex items-center gap-2">
+                                    <input type="time" value={iv.start}
+                                      onChange={e => updateInterval(i, k, 'start', e.target.value)}
+                                      className="premium-input py-1.5 text-sm w-28" />
+                                    <span className="text-slate-400 text-xs">até</span>
+                                    <input type="time" value={iv.end}
+                                      onChange={e => updateInterval(i, k, 'end', e.target.value)}
+                                      className="premium-input py-1.5 text-sm w-28" />
+                                    {row.intervals.length > 1 && (
+                                      <button type="button" onClick={() => removeInterval(i, k)}
+                                        className="text-slate-300 hover:text-rose-500 transition-colors">
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                                <button type="button" onClick={() => addInterval(i)}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 transition-colors">
+                                  <Plus className="w-3 h-3" /> Adicionar intervalo (ex: depois do almoço)
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic mt-1">Não atende</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

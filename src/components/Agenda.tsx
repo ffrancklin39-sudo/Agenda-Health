@@ -294,6 +294,47 @@ const Agenda: React.FC<Props> = ({
     fetchBlockedSlots();
   };
 
+  // ── Horários flexíveis (recorrentes) por profissional — almoço, dias parciais, etc ──
+  interface WeeklySchedule { professional_id: string; day_of_week: number; start_time: string; end_time: string; }
+  const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>([]);
+  const profsWithSchedule = new Set(weeklySchedules.map(w => w.professional_id));
+
+  const fetchWeeklySchedules = async () => {
+    const { data } = await supabase.from('professional_schedules').select('*');
+    setWeeklySchedules((data || []) as WeeklySchedule[]);
+  };
+
+  /** Para um profissional+data, retorna os intervalos [iniMin,fimMin] (minutos desde 00:00) em que
+   *  ELE NÃO atende, dentro da janela START_HOUR–END_HOUR — usado pra renderizar bloqueio (ex: almoço)
+   *  e pra validar conflito ao criar agendamento. Só age se o profissional tiver ALGUM horário configurado
+   *  (retrocompatível: quem não configurou nada continua com a agenda totalmente livre). */
+  const getOutOfHoursRanges = (profId: string, dateStr: string): [number, number][] => {
+    if (!profsWithSchedule.has(profId)) return [];
+    const dow = new Date(dateStr + 'T12:00').getDay();
+    const dayWindows = weeklySchedules
+      .filter(w => w.professional_id === profId && w.day_of_week === dow)
+      .map(w => [timeToMin(w.start_time), timeToMin(w.end_time)] as [number, number])
+      .sort((a, b) => a[0] - b[0]);
+
+    const dayStart = START_HOUR * 60;
+    const dayEnd   = END_HOUR * 60;
+    if (dayWindows.length === 0) return [[dayStart, dayEnd]]; // profissional tem horário configurado mas não atende neste dia
+
+    const gaps: [number, number][] = [];
+    let cursor = dayStart;
+    for (const [ws, we] of dayWindows) {
+      if (ws > cursor) gaps.push([cursor, Math.min(ws, dayEnd)]);
+      cursor = Math.max(cursor, we);
+    }
+    if (cursor < dayEnd) gaps.push([cursor, dayEnd]);
+    return gaps.filter(([a, b]) => b > a);
+  };
+
+  const timeToMin = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+
   const fetchAppointments = async (centerDate?: Date) => {
     try {
       // Busca janela de -6 meses a +12 meses a partir da data central (evita limite de 1000 linhas do Supabase)
@@ -344,6 +385,7 @@ const Agenda: React.FC<Props> = ({
   useEffect(() => {
     fetchAppointments();
     fetchBlockedSlots();
+    fetchWeeklySchedules();
 
     const channel = supabase
       .channel('agenda-realtime')
@@ -353,6 +395,9 @@ const Agenda: React.FC<Props> = ({
       // Quando um paciente é deletado, recarrega agenda para remover cards órfãos
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'patients' }, () => {
         fetchAppointments();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professional_schedules' }, () => {
+        fetchWeeklySchedules();
       })
       .subscribe();
 
@@ -499,6 +544,16 @@ const Agenda: React.FC<Props> = ({
         setToast({ type: 'error', msg: `${profName} está com agenda bloqueada neste horário${conflict.reason ? ` (${conflict.reason})` : ''}.` });
         return;
       }
+
+      const [eh, em] = editTime.split(':').map(Number);
+      const aptStartMin = (eh || 0) * 60 + (em || 0);
+      const aptEndMin   = aptStartMin + dur;
+      const outOfHours  = getOutOfHoursRanges(profId, editDate).find(([a, b]) => aptStartMin < b && aptEndMin > a);
+      if (outOfHours) {
+        const profName = professionals.find(p => p.id === profId)?.name?.split(' ')[0] || 'profissional';
+        setToast({ type: 'error', msg: `${profName} não atende neste horário (fora do expediente configurado).` });
+        return;
+      }
     }
     // Se for série, pergunta se aplica a todos
     const applyToSeries = editingApt.series_id
@@ -640,6 +695,17 @@ const Agenda: React.FC<Props> = ({
       if (conflict) {
         const profName = professionals.find(p => p.id === formProfId)?.name?.split(' ')[0] || 'profissional';
         setToast({ type: 'error', msg: `${profName} está com agenda bloqueada neste horário${conflict.reason ? ` (${conflict.reason})` : ''}.` });
+        return;
+      }
+
+      // Valida horário fixo de atendimento (almoço / fora do expediente configurado em Configurações > Profissionais)
+      const [fh, fm] = formTime.split(':').map(Number);
+      const aptStartMin = (fh || 0) * 60 + (fm || 0);
+      const aptEndMin   = aptStartMin + blockDur;
+      const outOfHours  = getOutOfHoursRanges(formProfId, formDate).find(([a, b]) => aptStartMin < b && aptEndMin > a);
+      if (outOfHours) {
+        const profName = professionals.find(p => p.id === formProfId)?.name?.split(' ')[0] || 'profissional';
+        setToast({ type: 'error', msg: `${profName} não atende neste horário (fora do expediente configurado).` });
         return;
       }
     }
@@ -1284,6 +1350,72 @@ const Agenda: React.FC<Props> = ({
     );
   };
 
+  /** Renderiza, para uma data e escala (1 no semanal, SCALE no diário):
+   *  1) os horários "fora do expediente" recorrentes (almoço etc, configurados em Configurações > Profissionais);
+   *  2) os bloqueios pontuais (ad-hoc) já existentes (férias, atestado, etc).
+   *  Reaproveitado entre a visão diária e semanal pra manter o mesmo comportamento. */
+  const renderBlocksForDay = (ds: string, scale: number) => {
+    const recurring = selectedProf !== 'all'
+      ? getOutOfHoursRanges(selectedProf, ds).map(([a, b], idx) => {
+          const topPx = getTopOffset(Math.floor(a / 60), a % 60) * scale;
+          const hPx   = (b - a) * (HOUR_HEIGHT / 60) * scale;
+          return (
+            <div key={`oh-${ds}-${idx}`} style={{
+              position: 'absolute', top: topPx + 2, left: 3, right: 3,
+              height: Math.max(20, hPx - 4), zIndex: 3,
+              background: 'repeating-linear-gradient(45deg, #f1f5f9, #f1f5f9 6px, #e2e8f0 6px, #e2e8f0 12px)',
+              border: '1.5px dashed #cbd5e1', borderRadius: 8, opacity: 0.9,
+              pointerEvents: 'auto',
+            }} className="flex items-center justify-center px-2 overflow-hidden">
+              <span className="text-[9px] font-semibold text-slate-400 truncate">Fora do expediente</span>
+            </div>
+          );
+        })
+      : [];
+
+    const adHoc = blockedSlots.filter(b => {
+      const bDate = b.start_datetime.slice(0, 10);
+      return bDate === ds && (selectedProf === 'all' || b.professional_id === selectedProf);
+    }).map(b => {
+      const prof   = professionals.find(p => p.id === b.professional_id);
+      const startH = parseInt(b.start_datetime.slice(11, 13));
+      const startM = parseInt(b.start_datetime.slice(14, 16));
+      const endH   = parseInt(b.end_datetime.slice(11, 13));
+      const endM   = parseInt(b.end_datetime.slice(14, 16));
+      const topPx  = getTopOffset(startH, startM) * scale;
+      const hPx    = ((endH * 60 + endM) - (startH * 60 + startM)) * (HOUR_HEIGHT / 60) * scale;
+      const c      = getProfColor(prof?.color || 'blue');
+      return (
+        <div key={b.id} style={{
+          position: 'absolute', top: topPx + 2, left: 3, right: 3,
+          height: Math.max(24, hPx - 4), zIndex: 4,
+          background: `repeating-linear-gradient(45deg, ${c.bg}, ${c.bg} 6px, ${c.bg}cc 6px, ${c.bg}cc 12px)`,
+          border: `1.5px dashed ${c.border}`,
+          borderRadius: 8, opacity: 0.85,
+          pointerEvents: selectedProf === 'all' ? 'none' : 'auto',
+        }}
+          className="flex flex-col justify-between px-2 py-1 overflow-hidden"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-semibold" style={{ color: c.border }}>
+              🔒 {prof?.name?.split(' ')[0]} — {b.reason || 'Bloqueado'}
+            </span>
+            {selectedProf !== 'all' && (
+              <button onClick={() => deleteBlock(b.id)}
+                className="text-[10px] opacity-60 hover:opacity-100 transition-opacity ml-1"
+                style={{ color: c.border }}>✕</button>
+            )}
+          </div>
+          <span className="text-[8px] opacity-60" style={{ color: c.border }}>
+            {b.start_datetime.slice(11, 16)} – {b.end_datetime.slice(11, 16)}
+          </span>
+        </div>
+      );
+    });
+
+    return [...recurring, ...adHoc];
+  };
+
   // ─────────────────────────── Weekly View ─────────────────────────────────
   const renderWeekly = () => {
     const monday   = getMonday(new Date(currentDate));
@@ -1367,47 +1499,8 @@ const Agenda: React.FC<Props> = ({
                     });
                   })()}
 
-                  {/* Bloqueios de horário */}
-                  {blockedSlots.filter(b => {
-                    const bDate = b.start_datetime.slice(0, 10);
-                    return bDate === ds && (selectedProf === 'all' || b.professional_id === selectedProf);
-                  }).map(b => {
-                    const prof = professionals.find(p => p.id === b.professional_id);
-                    const startH = parseInt(b.start_datetime.slice(11, 13));
-                    const startM = parseInt(b.start_datetime.slice(14, 16));
-                    const endH   = parseInt(b.end_datetime.slice(11, 13));
-                    const endM   = parseInt(b.end_datetime.slice(14, 16));
-                    const topPx  = getTopOffset(startH, startM);
-                    const hPx    = ((endH * 60 + endM) - (startH * 60 + startM)) * (HOUR_HEIGHT / 60);
-                    const c      = getProfColor(prof?.color || 'blue');
-                    return (
-                      <div key={b.id} style={{
-                        position: 'absolute', top: topPx + 2, left: 3, right: 3,
-                        height: Math.max(24, hPx - 4), zIndex: 4,
-                        background: `repeating-linear-gradient(45deg, ${c.bg}, ${c.bg} 6px, ${c.bg}cc 6px, ${c.bg}cc 12px)`,
-                        border: `1.5px dashed ${c.border}`,
-                        borderRadius: 8, opacity: 0.85,
-                        // Quando "Todos" está selecionado, não bloqueia cliques de outros profissionais
-                        pointerEvents: selectedProf === 'all' ? 'none' : 'auto',
-                      }}
-                        className="flex flex-col justify-between px-2 py-1 overflow-hidden"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[9px] font-semibold" style={{ color: c.border }}>
-                            🔒 {prof?.name?.split(' ')[0]} — {b.reason || 'Bloqueado'}
-                          </span>
-                          {selectedProf !== 'all' && (
-                            <button onClick={() => deleteBlock(b.id)}
-                              className="text-[10px] opacity-60 hover:opacity-100 transition-opacity ml-1"
-                              style={{ color: c.border }}>✕</button>
-                          )}
-                        </div>
-                        <span className="text-[8px] opacity-60" style={{ color: c.border }}>
-                          {b.start_datetime.slice(11, 16)} – {b.end_datetime.slice(11, 16)}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  {/* Bloqueios de horário (recorrentes + pontuais) */}
+                  {renderBlocksForDay(ds, 1)}
 
                   {/* Ghost on target column when dragging to a different day */}
                   {renderDragGhost(ds, 1)}
@@ -1477,6 +1570,9 @@ const Agenda: React.FC<Props> = ({
                   );
                 });
               })()}
+
+              {/* Bloqueios de horário (recorrentes + pontuais) */}
+              {renderBlocksForDay(ds, SCALE)}
             </div>
           </div>
         </div>

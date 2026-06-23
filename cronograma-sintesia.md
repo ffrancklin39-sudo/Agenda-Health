@@ -1,6 +1,6 @@
 # Cronograma SintesIA — Plano Completo (As 4 Pontas)
 
-**Atualizado em:** 2026-06-22 (reorganizado após o desvio da Sofia)
+**Atualizado em:** 2026-06-23 (correção: abas do PatientProfile já estavam concluídas desde 06-15)
 **Como usar:** siga as fases NA ORDEM. Marque `[x]` quando terminar. Não pule fases — cada una destrava a próxima.
 **Ritmo:** Seg–Sáb · ~3h/dia · 1 sessão = 1 dia de trabalho
 
@@ -12,7 +12,7 @@
 
 **⚠️ Por que as datas abaixo mudaram:** entre 17 e 22/06 a Sofia regrediu (respondia tudo, atropelava a Nayla) e você decidiu refazer a arquitetura do zero em vez de remendar — 3º incidente do mesmo bug. Isso consumiu praticamente toda a "Sem 1" original (que era pra ser Ficha do Paciente) e parou a captura de leads no meio do caminho. Foi a prioridade certa (sem captura de lead não tem CRM), mas o cronograma não previa esse trabalho — por isso a Fase 1 está sendo reorganizada com ~5 dias de atraso real.
 
-**Pendente na Fase 1 (não tocado ainda):** abas Prescrições, Documentos/Exames e Linha do Tempo no perfil do paciente.
+**✅ Correção 2026-06-23:** as abas Prescrições, Linha do Tempo e Documentos/Exames do PatientProfile já estavam implementadas e commitadas desde 2026-06-15 (`8844032`, `bb5ed56`, `e1e5671`) — este documento não tinha sido atualizado após a entrega. Marcadas como concluídas abaixo. Pendente real da Fase 1 agora é só validar a captura de lead real da Sofia 2.0 e a Camada 2 do CRM.
 
 **Pendente na Camada 2:** sugestão de próxima melhor ação + rascunho de mensagem (IA).
 
@@ -71,15 +71,15 @@
 
 ---
 
-### Ficha completa do paciente (PatientProfile)
-*Previsão original: 16–19 de junho → adiada para 23–26 de junho (não tocada por causa da Sofia)*
+### Ficha completa do paciente (PatientProfile) ✅ concluída em 2026-06-15
 
 - [x] Anamnese estruturada — builder drag-drop + aba de preenchimento ✅ 2026-06-09
 - [x] Histórico de agendamentos — aba com dados reais do Supabase ✅ 2026-06-09
 - [x] Evolução clínica — coberta pelos templates do tipo "evolucao" no builder ✅
-- [ ] Prescrições e orientações `[Jun 23]`
-- [ ] Linha do tempo clínica unificada `[Jun 24]`
-- [ ] Documentos e exames (upload + visualização via Supabase Storage) `[Jun 25–26]`
+- [x] Prescrições e orientações — builder de modelos + preenchimento + impressão ✅ 2026-06-15
+- [x] Linha do tempo clínica unificada — dados do Feegow + filtro por tipo ✅ 2026-06-15
+- [x] Documentos e exames — upload, preview e agrupamento por pasta via Supabase Storage ✅ 2026-06-15
+- [ ] (extra, fora do plano original) Aba "Resumos de IA" — ainda é placeholder em `PatientProfile.tsx`
 
 ---
 
