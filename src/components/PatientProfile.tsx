@@ -7,9 +7,11 @@ import {
   Image, Clock, Receipt, ChevronLeft, ChevronRight,
   AlertCircle, ShieldPlus, Activity, Trash2,
   Plus, DollarSign, TrendingUp, CheckCircle2, XCircle,
+  ScrollText, Sparkles, ExternalLink,
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
-import { Patient, PaymentFull, PAYMENT_METHOD_LABELS } from '../types';
+import { Patient, PaymentFull, PAYMENT_METHOD_LABELS, Contract, ContractItem, ClinicService } from '../types';
+import { generateTextContent } from '../services/geminiService';
 import { phoneMatchKey, toTitleCase } from '../phoneUtils';
 import AvatarUpload from './AvatarUpload';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
@@ -29,7 +31,8 @@ type SideTab =
   | 'agendamentos'
   | 'arquivos'
   | 'timeline'
-  | 'financeiro';
+  | 'financeiro'
+  | 'contratos';
 
 interface ClinicalRecord {
   id: string;
@@ -104,6 +107,7 @@ const NAV_ITEMS: { id: SideTab; label: string; icon: React.ElementType; badge?: 
   { id: 'arquivos',     label: 'Arquivos',             icon: Paperclip    },
   { id: 'timeline',     label: 'Linha do Tempo',       icon: Clock        },
   { id: 'financeiro',   label: 'Recibos / Financeiro', icon: Receipt      },
+  { id: 'contratos',    label: 'Contratos',            icon: ScrollText   },
 ];
 
 /* -------------------------------------------------
@@ -1143,6 +1147,10 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
             <PatientFinanceiro patient={patient} />
           )}
 
+          {activeTab === 'contratos' && (
+            <PatientContratos patient={patient} />
+          )}
+
         </main>
       </div>
     </div>
@@ -1321,3 +1329,469 @@ const PatientFinanceiro: React.FC<{ patient: Patient }> = ({ patient }) => {
 };
 
 export default PatientProfile;
+
+// ─── Aba Contratos ───────────────────────────────────────────────────────────
+
+const CONTRACT_STATUS_LABEL: Record<string, string> = {
+  draft: 'Rascunho', active: 'Ativo', signed: 'Assinado', cancelled: 'Cancelado',
+};
+const CONTRACT_STATUS_STYLE: Record<string, string> = {
+  draft:     'bg-slate-100 text-slate-500 border-slate-200',
+  active:    'bg-blue-50 text-blue-700 border-blue-200',
+  signed:    'bg-emerald-50 text-emerald-700 border-emerald-200',
+  cancelled: 'bg-rose-50 text-rose-600 border-rose-200',
+};
+const fmtBRL = (v?: number | null) =>
+  v != null ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—';
+const fmtD = (d?: string | null) =>
+  d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+
+interface NewContractForm {
+  professional_id: string;
+  start_date: string;
+  end_date: string;
+  payment_notes: string;
+  total_amount: string;
+  down_payment: string;
+  installments: string;
+  installment_value: string;
+  notes: string;
+}
+
+const blankForm = (): NewContractForm => ({
+  professional_id: '', start_date: '', end_date: '',
+  payment_notes: '', total_amount: '', down_payment: '',
+  installments: '1', installment_value: '', notes: '',
+});
+
+interface PatientContratosProps { patient: Patient }
+
+const PatientContratos: React.FC<PatientContratosProps> = ({ patient }) => {
+  const [contracts, setContracts]       = useState<Contract[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [showModal, setShowModal]       = useState(false);
+
+  // Form state
+  const [form, setForm]                 = useState<NewContractForm>(blankForm());
+  const [items, setItems]               = useState<ContractItem[]>([{ description: '', sessions: undefined, unit_price: undefined, subtotal: undefined }]);
+  const [services, setServices]         = useState<ClinicService[]>([]);
+  const [genLoading, setGenLoading]     = useState(false);
+  const [treatmentDesc, setTreatmentDesc] = useState('');
+  const [saving, setSaving]             = useState(false);
+  const [pdfLoading, setPdfLoading]     = useState<string | null>(null);
+  const [toast, setToast]               = useState<{ type: 'success'|'error'; msg: string } | null>(null);
+
+  const showToast = (type: 'success'|'error', msg: string) => {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // Carrega contratos do paciente
+  const fetchContracts = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('vw_contracts_full')
+      .select('*')
+      .eq('patient_id', patient.id)
+      .order('created_at', { ascending: false });
+    setContracts((data || []) as Contract[]);
+    setLoading(false);
+  };
+
+  // Carrega serviços para o seletor
+  useEffect(() => {
+    fetchContracts();
+    supabase.from('services').select('id,name,price,duration_minutes,category')
+      .order('name').then(({ data }) => setServices((data || []) as ClinicService[]));
+  }, [patient.id]);
+
+  // ── Itens do contrato ──────────────────────────────────────────────────────
+  const addItem = () => setItems(prev => [...prev, { description: '', sessions: undefined, unit_price: undefined, subtotal: undefined }]);
+  const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
+  const updateItem = (i: number, field: keyof ContractItem, value: any) => {
+    setItems(prev => {
+      const next = [...prev];
+      next[i] = { ...next[i], [field]: value };
+      // Recalcula subtotal automaticamente
+      if (field === 'unit_price' || field === 'quantity') {
+        const price = field === 'unit_price' ? Number(value) : Number(next[i].unit_price);
+        const qty   = field === 'quantity'   ? Number(value) : Number(next[i].quantity || 1);
+        next[i].subtotal = price * qty;
+      }
+      return next;
+    });
+  };
+
+  const totalCalc = items.reduce((s, it) => s + (it.subtotal || it.unit_price || 0), 0);
+
+  // ── Gerar descrição com Gemini ─────────────────────────────────────────────
+  const generateDescription = async () => {
+    const desc = items.filter(i => i.description).map(i =>
+      `- ${i.description}${i.sessions ? ` (${i.sessions} sessões)` : ''}${i.notes ? ` — ${i.notes}` : ''}`
+    ).join('\n');
+    if (!desc) { showToast('error', 'Adicione pelo menos um item antes de gerar.'); return; }
+
+    setGenLoading(true);
+    try {
+      const text = await generateTextContent(
+        `Você é assistente jurídico de uma clínica de estética e saúde integrada.
+Escreva UM parágrafo formal (3-5 linhas, em português, sem títulos ou marcadores)
+descrevendo os serviços abaixo para o "Objeto" de um contrato de prestação de serviços.
+Não invente nada além do que está listado. Seja claro e profissional.
+
+Serviços contratados:
+${desc}
+
+Paciente: ${patient.name}`
+      );
+      setTreatmentDesc(text);
+    } catch (e: any) {
+      showToast('error', 'Erro ao gerar descrição: ' + (e?.message || 'tente novamente'));
+    }
+    setGenLoading(false);
+  };
+
+  // ── Salvar contrato ────────────────────────────────────────────────────────
+  const saveContract = async () => {
+    if (!form.total_amount && totalCalc === 0) {
+      showToast('error', 'Informe o valor total.'); return;
+    }
+    setSaving(true);
+    try {
+      const total = Number(form.total_amount) || totalCalc;
+
+      const { data: contract, error: cErr } = await supabase
+        .from('contracts')
+        .insert({
+          patient_id:            patient.id,
+          professional_id:       form.professional_id || null,
+          treatment_description: treatmentDesc || null,
+          total_amount:          total,
+          payment_notes:         form.payment_notes || null,
+          installments:          Number(form.installments) || 1,
+          installment_value:     form.installment_value ? Number(form.installment_value) : null,
+          down_payment:          form.down_payment ? Number(form.down_payment) : null,
+          start_date:            form.start_date || null,
+          end_date:              form.end_date || null,
+          notes:                 form.notes || null,
+          status:                'active',
+        })
+        .select()
+        .single();
+
+      if (cErr) throw cErr;
+
+      // Insere itens
+      const validItems = items.filter(i => i.description);
+      if (validItems.length > 0) {
+        await supabase.from('contract_items').insert(
+          validItems.map((it, idx) => ({
+            contract_id: contract.id,
+            service_id:  it.service_id || null,
+            description: it.description,
+            sessions:    it.sessions || null,
+            unit_price:  it.unit_price || null,
+            quantity:    it.quantity || 1,
+            subtotal:    it.subtotal || it.unit_price || null,
+            notes:       it.notes || null,
+            sort_order:  idx,
+          }))
+        );
+      }
+
+      showToast('success', 'Contrato salvo!');
+      setShowModal(false);
+      setForm(blankForm());
+      setItems([{ description: '', sessions: undefined, unit_price: undefined, subtotal: undefined }]);
+      setTreatmentDesc('');
+      fetchContracts();
+    } catch (e: any) {
+      showToast('error', 'Erro ao salvar: ' + (e?.message || 'tente novamente'));
+    }
+    setSaving(false);
+  };
+
+  // ── Gerar e baixar PDF ─────────────────────────────────────────────────────
+  const downloadPDF = async (contract: Contract) => {
+    setPdfLoading(contract.id!);
+    try {
+      // Carrega itens do contrato
+      const { data: contractItems } = await supabase
+        .from('contract_items')
+        .select('*')
+        .eq('contract_id', contract.id)
+        .order('sort_order');
+
+      const { pdf } = await import('@react-pdf/renderer');
+      const ContractDocument = (await import('./ContractPDF')).default;
+      const blob = await pdf(
+        <ContractDocument contract={contract} items={(contractItems || []) as ContractItem[]} />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Contrato_${contract.patient_name?.replace(/\s+/g, '_')}_${
+        new Date(contract.created_at!).toLocaleDateString('pt-BR').replace(/\//g, '-')
+      }.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      showToast('error', 'Erro ao gerar PDF: ' + (e?.message || 'tente novamente'));
+    }
+    setPdfLoading(null);
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl text-sm font-bold
+          ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
+          {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+        <div>
+          <h3 className="text-base font-black text-slate-800">Contratos</h3>
+          <p className="text-xs text-slate-400 font-semibold mt-0.5">
+            {contracts.length} contrato{contracts.length !== 1 ? 's' : ''} encontrado{contracts.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Novo Contrato
+        </button>
+      </div>
+
+      {/* Lista */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 space-y-3">
+        {loading && (
+          <div className="flex items-center gap-2 text-slate-400 text-sm py-8 justify-center">
+            <Loader2 className="w-4 h-4 animate-spin" /> Carregando contratos...
+          </div>
+        )}
+
+        {!loading && contracts.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <ScrollText className="w-10 h-10 text-slate-200" />
+            <p className="text-slate-400 font-semibold text-sm">Nenhum contrato ainda</p>
+            <p className="text-slate-300 text-xs">Clique em "Novo Contrato" para gerar o primeiro</p>
+          </div>
+        )}
+
+        {!loading && contracts.map(c => (
+          <div key={c.id} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`px-2 py-0.5 text-[10px] font-black uppercase tracking-widest rounded-full border ${CONTRACT_STATUS_STYLE[c.status]}`}>
+                    {CONTRACT_STATUS_LABEL[c.status]}
+                  </span>
+                  <span className="text-xs text-slate-400 font-semibold">{fmtD(c.created_at)}</span>
+                </div>
+                <p className="text-sm font-black text-slate-800">{fmtBRL(c.total_amount)}</p>
+                {c.payment_notes && (
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">{c.payment_notes}</p>
+                )}
+                {c.start_date && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    {fmtD(c.start_date)}{c.end_date ? ` → ${fmtD(c.end_date)}` : ''}
+                  </p>
+                )}
+                {c.treatment_description && (
+                  <p className="text-xs text-slate-500 mt-2 line-clamp-2 leading-relaxed">
+                    {c.treatment_description}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => downloadPDF(c)}
+                disabled={pdfLoading === c.id}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+              >
+                {pdfLoading === c.id
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Download className="w-3.5 h-3.5" />}
+                PDF
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Modal: Novo Contrato ──────────────────────────────────────────── */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-800">Novo Contrato</h3>
+                <p className="text-xs text-slate-400 font-semibold">{patient.name}</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-5 space-y-5">
+
+              {/* Datas */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Data de início</label>
+                  <input type="date" value={form.start_date}
+                    onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Data de encerramento</label>
+                  <input type="date" value={form.end_date}
+                    onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30" />
+                </div>
+              </div>
+
+              {/* Itens */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-600">Itens / Serviços contratados</label>
+                  <button onClick={addItem} className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800">
+                    <Plus className="w-3.5 h-3.5" /> Adicionar item
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {items.map((item, i) => (
+                    <div key={i} className="border border-slate-200 rounded-xl p-3 space-y-2">
+                      <div className="flex gap-2">
+                        {/* Busca no catálogo */}
+                        <select
+                          value={item.service_id || ''}
+                          onChange={e => {
+                            const svc = services.find(s => s.id === e.target.value);
+                            if (svc) {
+                              updateItem(i, 'service_id', svc.id);
+                              updateItem(i, 'description', svc.name);
+                              updateItem(i, 'unit_price', svc.price);
+                              updateItem(i, 'subtotal', svc.price);
+                            }
+                          }}
+                          className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                        >
+                          <option value="">Selecionar do catálogo...</option>
+                          {services.map(s => (
+                            <option key={s.id} value={s.id}>{s.name} — {fmtBRL(s.price)}</option>
+                          ))}
+                        </select>
+                        {items.length > 1 && (
+                          <button onClick={() => removeItem(i)} className="p-1.5 text-rose-400 hover:text-rose-600">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        placeholder="Descrição do item (editável)"
+                        value={item.description}
+                        onChange={e => updateItem(i, 'description', e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none"
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <input type="number" placeholder="Sessões"
+                          value={item.sessions ?? ''}
+                          onChange={e => updateItem(i, 'sessions', e.target.value ? Number(e.target.value) : undefined)}
+                          className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+                        <input type="number" placeholder="Valor (R$)"
+                          value={item.unit_price ?? ''}
+                          onChange={e => updateItem(i, 'unit_price', e.target.value ? Number(e.target.value) : undefined)}
+                          className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+                        <input placeholder="Obs (ex: 15 em 15 dias)"
+                          value={item.notes || ''}
+                          onChange={e => updateItem(i, 'notes', e.target.value)}
+                          className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {totalCalc > 0 && (
+                  <p className="text-right text-xs font-bold text-slate-600 mt-1">
+                    Total dos itens: {fmtBRL(totalCalc)}
+                  </p>
+                )}
+              </div>
+
+              {/* Gerar descrição */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-600">Descrição do tratamento (cláusula do objeto)</label>
+                  <button
+                    onClick={generateDescription}
+                    disabled={genLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                  >
+                    {genLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    Gerar com IA
+                  </button>
+                </div>
+                <textarea
+                  rows={4}
+                  value={treatmentDesc}
+                  onChange={e => setTreatmentDesc(e.target.value)}
+                  placeholder="Descreva os serviços contratados, ou clique em 'Gerar com IA' para preencher automaticamente..."
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400/30 resize-none"
+                />
+              </div>
+
+              {/* Pagamento */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Valor total (R$)</label>
+                <input type="number" placeholder={totalCalc > 0 ? String(totalCalc) : '0,00'}
+                  value={form.total_amount}
+                  onChange={e => setForm(f => ({ ...f, total_amount: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Forma de pagamento (campo livre)</label>
+                <input
+                  placeholder="Ex: 12x de R$598,00 no cartão de crédito"
+                  value={form.payment_notes}
+                  onChange={e => setForm(f => ({ ...f, payment_notes: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30" />
+              </div>
+
+              {/* Obs */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Observações internas (não aparecem no PDF)</label>
+                <textarea rows={2} value={form.notes}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400/30 resize-none" />
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+              <button onClick={() => setShowModal(false)}
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                Cancelar
+              </button>
+              <button
+                onClick={saveContract}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar e Gerar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

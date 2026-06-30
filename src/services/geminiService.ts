@@ -120,3 +120,16 @@ Tarefas:
     messageDraft: String(parsed.messageDraft || '').trim(),
   };
 }
+
+/**
+ * Gera um texto livre usando o Gemini — uso genérico (ex: descrição de
+ * tratamento para contratos). Retorna a string gerada ou lança erro.
+ */
+export async function generateTextContent(prompt: string): Promise<string> {
+  const ai = getClient();
+  const result = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+  });
+  return result.text?.trim() ?? '';
+}

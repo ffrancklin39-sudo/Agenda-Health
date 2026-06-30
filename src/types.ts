@@ -353,3 +353,57 @@ export interface ProcedureProfitability extends ProcedurePricing {
   margin_pct_pix: number;
   profit_per_minute: number;
 }
+
+// ─── Contratos ──────────────────────────────────────────────────────────────
+
+export type ContractStatus = 'draft' | 'active' | 'signed' | 'cancelled';
+
+export interface ContractItem {
+  id?: string;
+  contract_id?: string;
+  service_id?: string;
+  description: string;
+  sessions?: number;
+  unit_price?: number;
+  quantity?: number;
+  subtotal?: number;
+  notes?: string;
+  sort_order?: number;
+  created_at?: string;
+}
+
+export interface Contract {
+  id?: string;
+  patient_id: string;
+  professional_id?: string;
+  treatment_description?: string;
+  total_amount: number;
+  payment_method?: string;
+  installments?: number;
+  installment_value?: number;
+  down_payment?: number;
+  payment_notes?: string;
+  start_date?: string;
+  end_date?: string;
+  signed_at?: string;
+  status: ContractStatus;
+  pdf_url?: string;
+  notes?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  // Da view vw_contracts_full
+  patient_name?: string;
+  patient_cpf?: string;
+  patient_phone?: string;
+  patient_email?: string;
+  patient_birth_date?: string;
+  patient_address?: string;
+  address_number?: string;
+  neighborhood?: string;
+  patient_city?: string;
+  patient_state?: string;
+  patient_zip?: string;
+  professional_name?: string;
+  items?: ContractItem[];
+}
