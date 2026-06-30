@@ -1,6 +1,6 @@
 # Cronograma SintesIA — Plano Completo (As 4 Pontas)
 
-**Atualizado em:** 2026-06-23 (correção: abas do PatientProfile já estavam concluídas desde 06-15)
+**Atualizado em:** 2026-06-25 (Camada 2 do CRM fechada + captura de lead validada)
 **Como usar:** siga as fases NA ORDEM. Marque `[x]` quando terminar. Não pule fases — cada una destrava a próxima.
 **Ritmo:** Seg–Sáb · ~3h/dia · 1 sessão = 1 dia de trabalho
 
@@ -16,9 +16,16 @@
 
 **Pendente na Camada 2:** sugestão de próxima melhor ação + rascunho de mensagem (IA).
 
-**⚠️ Ação imediata (ainda aberta):** rodar `sql/services_add_description.sql` no Supabase SQL Editor para habilitar o campo Descrição nos serviços.
+**✅ Correção 2026-06-24:** as três pendências abaixo já estavam resolvidas, só não tinham sido marcadas:
+- `sql/services_add_description.sql` já tinha sido rodado — coluna `description` confirmada na tabela `services`.
+- Commit de checkpoint já tinha sido feito em 2026-06-23 (`6bd5c40`, `6f3cfb0`) — `HEAD` local está igual a `origin/main`, nada pendente para commitar ou dar push.
+- Bug de sintaxe no node `PODE_SOFIA_RESPONDER` (chave extra) que travava toda a captura de leads/pacientes foi corrigido e publicado — testado com "Execute step" e confirmado sem erro.
 
-**⚠️ Commit pendente (ainda aberto — você mesmo levantou essa dúvida):** muita coisa não commitada desde `64ec680` — AnamnesisTab, PatientProfile, ServicesCatalog, Dashboard, PaymentRegisterModal. Some a isso tudo que foi feito na Sofia 2.0 esta semana (workflow, migrações SQL, docs de arquitetura) — vale um commit grande de checkpoint antes de seguir.
+**✅ Correção 2026-06-24 (segurança):** ao verificar o `fix_rls_security.sql` da auditoria de 06-09, descobrimos que ele tinha rodado mas não removeu as políticas antigas (`patients_select/insert/update/delete` e `appointments_select/insert/update/delete`, todas `roles = {public}`) porque o `DROP POLICY` usava nomes diferentes dos reais. Ou seja, `patients` e `appointments` continuavam abertos a qualquer um com a anon key mesmo depois do "fix". Políticas antigas removidas agora — confirmado que só restam policies `{authenticated}` nessas duas tabelas.
+
+**✅ Correção 2026-06-25:** Camada 2 do CRM fechada — sugestão de próxima melhor ação + rascunho de mensagem implementados (`ai_next_action`/`ai_message_draft`, reaproveitando a mesma chamada do Gemini que já gerava resumo/temperatura). Captura de lead real da Sofia 2.0 também validada: lead "Rosana" entrou com telefone real em 24/06, confirmando que o fix do `PODE_SOFIA_RESPONDER` está funcionando ponta a ponta em produção.
+
+**Pendente real agora:** Fase 1 está praticamente fechada — falta só a migração de domínio próprio (tarefa sua, DNS/Vercel/Supabase Auth) e a aba "Resumos de IA" do PatientProfile (extra, fora do plano original, ainda placeholder). Próximo passo natural é avançar para a Fase 2 (Financeiro).
 
 ---
 
@@ -40,8 +47,8 @@
 - [x] Resumo automático do histórico do paciente ✅ 2026-06-16
 - [x] Análise de interesse/urgência (IA lê contexto e sinaliza "lead quente") ✅ 2026-06-16
 - [x] Captura automática de leads — WhatsApp via n8n ✅ 2026-06-16 (depois refeita do zero, ver abaixo)
-- [ ] Sugestão de próxima melhor ação `[Jun 27]`
-- [ ] Rascunho de mensagem personalizada para revisão humana `[Jun 27]`
+- [x] Sugestão de próxima melhor ação ✅ 2026-06-25 (`ai_next_action`, mesma chamada do resumo IA)
+- [x] Rascunho de mensagem personalizada para revisão humana ✅ 2026-06-25 (`ai_message_draft`, botão "Copiar" no painel do lead — nunca enviado automaticamente)
 
 **⚪ Fora do plano original — redesenho completo da Sofia (3º incidente do bug @lid/handoff)**
 - [x] Diagnóstico da causa raiz (resolução de identidade espalhada pelo fluxo) ✅ 2026-06-17
@@ -49,7 +56,16 @@
 - [x] Separação `CAPTURA_LEAD` (sempre ativa) / `SOFIA_RESPONDE` (opcional, kill-switch) ✅ 2026-06-18
 - [x] Testes da Fase 1 do plano de testes (cenários 1–7) ✅ 2026-06-18
 - [x] Publicação em produção como "Sofia 2.0 - Produção", Sofia OFF via `SOFIA_GLOBAL_ATIVA` ✅ 2026-06-22
-- [ ] Validar captura de lead real (primeiro contato de paciente) `[Jun 23]`
+- [x] Validar captura de lead real (primeiro contato de paciente) ✅ 2026-06-25 (lead "Rosana", telefone real, capturado em 24/06 após o fix do `PODE_SOFIA_RESPONDER`)
+
+### Controle de acesso por papel (ADMIN / RECEPTIONIST / DOCTOR) `[Jun 26]`
+**Adicionado em 2026-06-25** — não estava no cronograma ainda, só na visão original (`sintesia_vision.md`). Investigado o código real: a "casca" de UI já existe (Sidebar já filtra menu por `roles: string[]` por item) e funcionaria hoje mesmo, mas `userRole` está hardcoded em `'ADMIN'` em `App.tsx` porque a tabela `profiles` (de onde o role real viria) nunca foi criada no Supabase. Não há nenhuma policy RLS diferenciando por role hoje (é authenticated-or-nothing em tudo), a aba "Usuários" em Settings é 100% estática/placeholder, e não existe vínculo entre login (`auth.users`) e a tabela `professionals` — então "médico só vê os próprios pacientes" ainda não é possível estruturalmente.
+- [x] Tabela `profiles` (id, role, email) + trigger de auto-criação no signup ✅ 2026-06-25 (SQL pronto em `sql/profiles_and_roles.sql` — backfill dos 2 logins atuais como ADMIN, novos signups entram como RECEPTIONIST. **Falta rodar no Supabase** — tem `CREATE POLICY`/RLS, então é o usuário quem clica "Run", não eu.)
+- [ ] Atribuir role real aos 2 logins existentes — automático no backfill do SQL acima; revisar depois de rodar se algum dos 2 deveria ser DOCTOR/RECEPTIONIST em vez de ADMIN
+- [x] Aba "Usuários" funcional em Settings (listar/atribuir role) ✅ 2026-06-25 — lista `profiles`, ADMIN troca o papel de cada usuário num select. Criar novo login ainda é manual no Supabase Auth (sem API admin no frontend); aparece aqui sozinho depois.
+- [x] Aplicar checagem de role *dentro* das abas restritas ✅ 2026-06-25 — guard real em `App.tsx` (`canAccessTab`, reaproveita o mesmo mapa de roles do Sidebar) bloqueia o conteúdo de Finance/Settings/BI/Reports mesmo que `activeTab` mude por outro caminho, não só esconder o botão.
+- [ ] Decidir e implementar RLS por role em `patients`/`appointments`/etc. (defesa em profundidade — hoje a trava é só no app, não no banco)
+- [ ] Vincular `professionals.user_id` → `auth.users.id` (necessário se "DOCTOR só vê seus próprios pacientes/agenda" for a regra desejada — decisão de negócio em aberto, decidir depois)
 
 **🔴 Camada 3 — Automação autônoma (parcialmente destravada agora que a Sofia 2.0 está publicada)**
 - [ ] Inbox omnichannel (WhatsApp + Instagram + site)
@@ -152,6 +168,46 @@
 - [ ] Receitas saudáveis sugeridas conforme fase do protocolo
 - [ ] Canal direto de comunicação com a equipe da clínica
 - [ ] Dicas curtas de saúde / conteúdo de comunidade
+
+---
+
+## Módulo de Contratos `[Jul 2026]`
+
+> Gerar contratos de tratamento automaticamente com dados do paciente, serviços contratados, forma de pagamento — entrega PDF pronto pra imprimir ou enviar pro paciente assinar. Assinatura digital (Clicksign/DocuSign) é fase 2 deste módulo.
+
+**Banco de dados**
+- [ ] Tabela `contracts` — `patient_id`, `professional_id`, `items` (JSONB: lista de serviços/pacotes + valores), `payment_method`, `total_amount`, `status` (draft/active/signed), `notes`, `created_at`
+- [ ] SQL + RLS (só ADMIN cria/visualiza contratos)
+
+**Frontend**
+- [ ] Botão "Novo contrato" no perfil do paciente (aba nova ou modal)
+- [ ] Cabeçalho auto-preenchido: nome, CPF, endereço, data de nascimento do `patients`
+- [ ] Seletor de itens contratados (busca nos `services` cadastrados + campo livre pra pacote)
+- [ ] Seletor de forma de pagamento (reusa `PaymentMethodFull`) + campo de valor/parcelamento
+- [ ] Preview do contrato antes de gerar PDF
+- [ ] Geração de PDF com `@react-pdf/renderer` — layout com logo da clínica, dados do paciente, tabela de itens, assinatura no rodapé
+- [ ] Histórico de contratos do paciente (listagem com status e download)
+
+**Fase 2 (depois)**
+- [ ] Assinatura digital via Clicksign ou DocuSign API
+- [ ] Envio do contrato por WhatsApp (link ou PDF direto via WAHA)
+- [ ] Template personalizável por tipo de tratamento
+
+---
+
+## FASE 6 — Preparação para Comercialização (Multi-clínica)
+*Objetivo: tornar o SintesIA vendável para outras clínicas sem que cada venda exija uma implantação manual completa.*
+*🏁 Meta: sem data fixa — revisitar com prioridade antes de fechar a primeira venda para uma 2ª clínica.*
+
+**Contexto (2026-06-25):** discutimos a comercialização do SintesIA para outras clínicas. A separação "CRM com/sem Sofia" já funciona bem (captura automática e resposta automática são chaves independentes desde a arquitetura definida em `docs/sofia-arquitetura-definitiva.md`), então isso não é bloqueio. Os pontos reais a resolver antes de vender para uma 2ª clínica:
+
+- [ ] Arquitetura multi-tenant: hoje é um Supabase + Vercel + workflow n8n + número WAHA por clínica (sem `clinic_id` em nenhuma tabela) — cada venda = implantação manual completa, não escala
+- [ ] Expor o toggle "Sofia ativa" em `clinic_settings`/aba Configurações do app, em vez de ser uma variável só editável por mim no n8n
+- [ ] Isolar cota/billing do Gemini por clínica (hoje é uma chave global única, sem atribuição de uso por cliente)
+- [ ] Avaliar migrar do WAHA (automação não-oficial do WhatsApp) para a WhatsApp Business API oficial — o risco de banimento de número se multiplica por clínica vendida
+- [ ] Padronizar (ou eliminar via multi-tenant) o processo de onboarding de cliente novo: clonar workflow n8n, provisionar Supabase/Vercel, configurar número
+
+**Nota:** isso não trava o roadmap atual — features novas (CRM Camada 2, etc.) continuam sendo construídas normalmente, só evitando decisões que tornem essa migração futura mais difícil do que precisa ser.
 
 ---
 

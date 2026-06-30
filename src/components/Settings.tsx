@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User, Briefcase, Building2, Shield, Clock,
   Plus, Pencil, Trash2, Check, X, Loader2, CheckCircle2, AlertCircle,
   Wallet,
 } from 'lucide-react';
-import { Professional, ClinicService } from '../types';
+import { Professional, ClinicService, UserProfileRow, UserRole } from '../types';
 import { supabase } from '../services/supabaseClient';
 import AvatarUpload from './AvatarUpload';
 import FinancialSettings from './admin/FinancialSettings';
@@ -39,7 +39,14 @@ interface Props {
   onRefreshProfessionals: () => void;
   onRefreshServices: () => void;
   session: any;
+  userRole?: UserRole;
 }
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: 'Administrador(a)',
+  DOCTOR: 'Profissional',
+  RECEPTIONIST: 'Recepção',
+};
 
 const TITLES = ['Nenhum', 'Sr.', 'Sra.', 'Dr.', 'Dra.', 'Prof.', 'Profa.'];
 const COUNCILS = ['CRM', 'CRN', 'CRP', 'CRO', 'CREFITO', 'CRF', 'COREN', 'CFN', 'CRBM', 'CRTH', 'Outro'];
@@ -54,7 +61,7 @@ const blankProf = () => ({
 const blankSvc  = () => ({ name: '', price: 0, duration: 60, duration_minutes: 60, category: 'Consultas', description: '' });
 
 const Settings: React.FC<Props> = ({
-  professionals, services, onRefreshProfessionals, onRefreshServices, session,
+  professionals, services, onRefreshProfessionals, onRefreshServices, session, userRole,
 }) => {
   const [tab, setTab]     = useState<SettingsTab>('profissionais');
   const [toast, setToast] = useState<Toast>(null);
@@ -63,6 +70,45 @@ const Settings: React.FC<Props> = ({
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
+  };
+
+  // ── Usuários (profiles + role) ──────────────────────────────────────────
+  const [users, setUsers] = useState<UserProfileRow[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [savingUserId, setSavingUserId] = useState<string | null>(null);
+
+  const fetchUsers = async () => {
+    setUsersLoading(true);
+    setUsersError(null);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, role, created_at')
+      .order('created_at', { ascending: true });
+    if (error) {
+      // Provável causa: tabela `profiles` ainda não existe (migration não foi rodada)
+      setUsersError(error.message);
+      setUsers([]);
+    } else {
+      setUsers((data || []) as UserProfileRow[]);
+    }
+    setUsersLoading(false);
+  };
+
+  useEffect(() => {
+    if (tab === 'usuarios') fetchUsers();
+  }, [tab]);
+
+  const changeUserRole = async (userId: string, newRole: UserRole) => {
+    setSavingUserId(userId);
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    if (error) {
+      showToast('error', 'Não foi possível atualizar o papel: ' + error.message);
+    } else {
+      setUsers(prev => prev.map(u => (u.id === userId ? { ...u, role: newRole } : u)));
+      showToast('success', 'Papel atualizado.');
+    }
+    setSavingUserId(null);
   };
 
   // Professional state
@@ -750,7 +796,7 @@ const Settings: React.FC<Props> = ({
       {/* Usuarios */}
       {tab === 'usuarios' && (
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="max-w-lg space-y-5">
+          <div className="max-w-2xl space-y-5">
             <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center">
@@ -761,17 +807,80 @@ const Settings: React.FC<Props> = ({
                   <p className="text-xs text-slate-400 font-semibold">{session?.user?.email || '—'}</p>
                 </div>
                 <span className="ml-auto px-3 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-full tracking-widest">
-                  ADMIN
+                  {userRole || '—'}
                 </span>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-500 font-semibold leading-relaxed">
-                Voce tem acesso total ao sistema. O gerenciamento de multiplos usuarios com roles diferentes estara disponivel em uma proxima versao.
+                ADMIN tem acesso total. DOCTOR e RECEPTIONIST veem só as abas operacionais (Dashboard, Agenda, Pacientes, Tarefas — CRMi é só ADMIN/RECEPTIONIST). Financeiro, BI, Relatórios e Configurações são exclusivos de ADMIN.
               </div>
             </div>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm font-black text-slate-800">Usuários e papéis</p>
+                <button
+                  onClick={fetchUsers}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                >
+                  Atualizar
+                </button>
+              </div>
+
+              {usersLoading && (
+                <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+                </div>
+              )}
+
+              {!usersLoading && usersError && (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex items-start gap-3">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-xs font-semibold text-amber-700">
+                    Não foi possível carregar os usuários ({usersError}). Provavelmente a tabela
+                    <code className="mx-1 px-1 bg-amber-100 rounded">profiles</code>
+                    ainda não foi criada — rode <code className="px-1 bg-amber-100 rounded">sql/profiles_and_roles.sql</code> no Supabase.
+                  </p>
+                </div>
+              )}
+
+              {!usersLoading && !usersError && users.length === 0 && (
+                <p className="text-xs text-slate-400 font-semibold py-2">Nenhum usuário encontrado.</p>
+              )}
+
+              {!usersLoading && !usersError && users.length > 0 && (
+                <div className="space-y-2">
+                  {users.map(u => (
+                    <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-100">
+                      <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4 text-slate-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 truncate">{u.email}</p>
+                        {u.id === session?.user?.id && (
+                          <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide">Você</p>
+                        )}
+                      </div>
+                      <select
+                        value={u.role}
+                        disabled={savingUserId === u.id || userRole !== 'ADMIN'}
+                        onChange={e => changeUserRole(u.id, e.target.value as UserRole)}
+                        className="text-xs font-bold border border-slate-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50"
+                      >
+                        {(Object.keys(ROLE_LABELS) as UserRole[]).map(r => (
+                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                        ))}
+                      </select>
+                      {savingUserId === u.id && <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 flex items-center gap-3">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
               <p className="text-xs font-semibold text-amber-700">
-                Multi-usuario, convites por e-mail e controle de permissoes por role estarao disponiveis em breve.
+                Criar um novo login ainda é feito direto no Supabase (Authentication → Add user). Depois de criado, ele aparece aqui automaticamente como Recepção — só trocar o papel.
               </p>
             </div>
           </div>

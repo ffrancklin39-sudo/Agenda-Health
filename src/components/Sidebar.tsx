@@ -59,6 +59,20 @@ const SOLO_ITEMS: MenuItem[] = [
   { id: 'settings', label: 'Configuracoes', icon: SettingsIcon, roles: ['ADMIN'], ready: true },
 ];
 
+// ─── Mapa de acesso por aba (fonte única — usado também pelo guard real em App.tsx) ───
+// Esconder o botão no menu não é proteção de verdade: isso é reaproveitado
+// em App.tsx pra bloquear o conteúdo mesmo que activeTab seja alterado por
+// outro caminho que não o clique no menu.
+export const TAB_ROLES: Record<string, string[]> = Object.fromEntries(
+  [...GROUPS.flatMap(g => g.items), ...SOLO_ITEMS].map(item => [item.id, item.roles])
+);
+
+export const canAccessTab = (tab: string, role: string): boolean => {
+  const allowed = TAB_ROLES[tab];
+  if (!allowed) return true; // aba sem regra definida — não bloqueia (ex: abas sempre públicas)
+  return allowed.includes(role);
+};
+
 // ─── Sub-componente: botão de item ───────────────────────────
 
 interface NavItemProps {

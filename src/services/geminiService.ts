@@ -28,6 +28,8 @@ export interface PatientAIAnalysis {
   summary: string;
   temperature: 'quente' | 'morno' | 'frio';
   temperatureReason: string;
+  nextAction: string;
+  messageDraft: string;
 }
 
 export const isGeminiConfigured = (): boolean => !!API_KEY;
@@ -79,7 +81,9 @@ ${context}
 Tarefas:
 1. Escreva um resumo curto (2 a 4 frases) do histórico e situação atual deste lead/paciente, útil para a recepção entender rapidamente o contexto sem reler tudo.
 2. Classifique a temperatura do lead como "quente" (alto interesse/urgência, agir agora), "morno" (interesse moderado, acompanhar) ou "frio" (baixo engajamento ou parado há muito tempo).
-3. Explique em uma frase curta o motivo da classificação.`;
+3. Explique em uma frase curta o motivo da classificação.
+4. Sugira a próxima melhor ação para a recepção em uma frase curta e prática (ex: "Ligar hoje oferecendo um horário", "Aguardar resposta, já foi contatado recentemente", "Mover para reativação — parado há muito tempo"). Considere o estágio atual no funil e o tempo desde o último contato.
+5. Escreva um rascunho de mensagem de WhatsApp (2 a 3 frases, tom acolhedor e objetivo, sem emojis em excesso) que a recepção pode revisar e enviar para este lead. Esse rascunho é APENAS para revisão humana — nunca será enviado automaticamente, então não inclua instruções de envio, apenas o texto da mensagem em si.`;
 
   const response = await ai.models.generateContent({
     model: MODEL,
@@ -92,8 +96,10 @@ Tarefas:
           summary: { type: Type.STRING },
           temperature: { type: Type.STRING, enum: ['quente', 'morno', 'frio'] },
           temperatureReason: { type: Type.STRING },
+          nextAction: { type: Type.STRING },
+          messageDraft: { type: Type.STRING },
         },
-        required: ['summary', 'temperature', 'temperatureReason'],
+        required: ['summary', 'temperature', 'temperatureReason', 'nextAction', 'messageDraft'],
       },
     },
   });
@@ -110,5 +116,7 @@ Tarefas:
     summary: String(parsed.summary || '').trim(),
     temperature,
     temperatureReason: String(parsed.temperatureReason || '').trim(),
+    nextAction: String(parsed.nextAction || '').trim(),
+    messageDraft: String(parsed.messageDraft || '').trim(),
   };
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Bell, Loader2, LogOut, AlertCircle, CheckCircle2, ListChecks } from 'lucide-react';
+import { Search, Bell, Loader2, LogOut, AlertCircle, CheckCircle2, ListChecks, ShieldAlert } from 'lucide-react';
 import { Patient, PatientStatus, UserRole, Professional, ClinicService } from './types';
-import Sidebar from './components/Sidebar';
+import Sidebar, { canAccessTab } from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import PatientList from './components/PatientList';
 import Agenda from './components/Agenda';
@@ -359,6 +359,17 @@ const App: React.FC = () => {
                   <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
                   <p className="text-slate-400 text-sm font-medium">Sincronizando dados...</p>
                 </div>
+              ) : !canAccessTab(activeTab, userRole) ? (
+                // Trava real — antes disso, a única "proteção" era esconder o botão no
+                // menu (Sidebar). Se activeTab mudasse por qualquer outro caminho, o
+                // conteúdo restrito ainda renderizava. Agora o conteúdo nem monta.
+                <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6">
+                  <ShieldAlert className="w-10 h-10 text-amber-400" />
+                  <p className="text-slate-700 font-bold">Acesso restrito</p>
+                  <p className="text-slate-400 text-sm max-w-sm">
+                    Seu papel ({userRole}) não tem acesso a esta área. Se isso for um engano, fale com o administrador da clínica.
+                  </p>
+                </div>
               ) : (
                 <>
                   {activeTab === 'dashboard'   && <Dashboard patients={patients} dueReminders={dueReminders} />}
@@ -368,7 +379,7 @@ const App: React.FC = () => {
                   {activeTab === 'automations'  && <Automations patients={patients} />}
                   {activeTab === 'finance'      && <Finance userRole={userRole} patients={patients} />}
                   {activeTab === 'services'     && <ServicesCatalog services={services} onRefresh={fetchServices} />}
-                  {activeTab === 'settings'     && <Settings professionals={professionals} services={services} onRefreshProfessionals={fetchProfessionals} onRefreshServices={fetchServices} session={session} />}
+                  {activeTab === 'settings'     && <Settings professionals={professionals} services={services} onRefreshProfessionals={fetchProfessionals} onRefreshServices={fetchServices} session={session} userRole={userRole} />}
                   {activeTab === 'tasks'        && <Tasks professionals={professionals} session={session} onPendingCountChange={setPendingTasksCount} />}
                   {activeTab === 'bi'           && <ProfitDashboard />}
                   {activeTab === 'reports'      && <Reports />}

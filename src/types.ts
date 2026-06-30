@@ -9,6 +9,14 @@ export enum PatientStatus {
 
 export type UserRole = 'ADMIN' | 'DOCTOR' | 'RECEPTIONIST';
 
+/** Row da tabela `profiles` — papel de cada login do Supabase Auth */
+export interface UserProfileRow {
+  id: string;
+  email: string;
+  role: UserRole;
+  created_at?: string;
+}
+
 export interface Patient {
   id: string;
   name: string;
@@ -106,6 +114,8 @@ export interface Patient {
   ai_summary_updated_at?: string;
   lead_temperature?: 'quente' | 'morno' | 'frio' | string;
   lead_temperature_reason?: string;
+  ai_next_action?: string;
+  ai_message_draft?: string;
 }
 
 export interface Professional {

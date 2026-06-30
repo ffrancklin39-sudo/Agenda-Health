@@ -6,7 +6,7 @@ import { phoneMatchKey } from '../phoneUtils';
 import {
   Phone, MessageCircle, DollarSign, Check, UserPlus, BellRing, Bell,
   Edit2, Trash2, AlarmClock, AlignLeft, X, Stethoscope, Search, Clock, History,
-  Sparkles, Flame, Thermometer, Snowflake, RefreshCw,
+  Sparkles, Flame, Thermometer, Snowflake, RefreshCw, Target, Copy, CopyCheck,
 } from 'lucide-react';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
 import { analyzePatient, isGeminiConfigured } from '../services/geminiService';
@@ -125,6 +125,14 @@ const CRMi: React.FC<CRMiProps> = ({
   // IA — Camada 2 (resumo + lead quente)
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [draftCopied, setDraftCopied] = useState(false);
+
+  const copyMessageDraft = (text: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setDraftCopied(true);
+      setTimeout(() => setDraftCopied(false), 2000);
+    });
+  };
 
   // Feedback visual
   const [confirmSuccess, setConfirmSuccess] = useState<string | null>(null);
@@ -378,6 +386,8 @@ const CRMi: React.FC<CRMiProps> = ({
         ai_summary_updated_at: new Date().toISOString(),
         lead_temperature: result.temperature,
         lead_temperature_reason: result.temperatureReason,
+        ai_next_action: result.nextAction,
+        ai_message_draft: result.messageDraft,
       };
       const { error } = await supabase.from('patients').update(updates).eq('id', patient.id);
       if (error) throw error;
@@ -1550,6 +1560,34 @@ const CRMi: React.FC<CRMiProps> = ({
                         )}
                       </div>
                     )}
+                    {historyPatient.ai_next_action && (
+                      <div className="flex items-start gap-1.5 mt-2.5 pt-2.5 border-t border-indigo-100">
+                        <Target size={12} className="text-indigo-500 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Próxima ação sugerida</p>
+                          <p className="text-sm text-slate-700 leading-snug">{historyPatient.ai_next_action}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {historyPatient.ai_message_draft && (
+                      <div className="mt-2.5">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Rascunho de mensagem (revisar antes de enviar)</p>
+                          <button
+                            onClick={() => copyMessageDraft(historyPatient.ai_message_draft || '')}
+                            className="flex items-center gap-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0"
+                          >
+                            {draftCopied ? <CopyCheck size={11} /> : <Copy size={11} />}
+                            {draftCopied ? 'Copiado' : 'Copiar'}
+                          </button>
+                        </div>
+                        <p className="text-sm text-slate-700 leading-snug bg-white border border-indigo-100 rounded-lg p-2.5 whitespace-pre-wrap">
+                          {historyPatient.ai_message_draft}
+                        </p>
+                      </div>
+                    )}
+
                     {historyPatient.ai_summary_updated_at && (
                       <p className="text-[10px] text-slate-300 mt-1.5">
                         Atualizado em {new Date(historyPatient.ai_summary_updated_at).toLocaleString('pt-BR', {
