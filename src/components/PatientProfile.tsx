@@ -1793,4 +1793,21 @@ Paciente: ${patient.name}`
             {/* Modal footer */}
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
               <button onClick={() => setShowModal(false)}
-                className="px-4 py-2 text
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                Cancelar
+              </button>
+              <button
+                onClick={saveContract}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar e Gerar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
