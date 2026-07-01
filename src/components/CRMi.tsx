@@ -221,6 +221,30 @@ const CRMi: React.FC<CRMiProps> = ({
   // para "Leads Frios". A partir daí entra no fluxo do Projeto Lazaro
   // (conteúdo semanal via Sofia — Fase 3, ainda pendente de ativação):
   // ou o lead bloqueia, ou levanta a mão e volta ao funil.
+  // ── Scroll do board: useEffect não-passivo (React onWheel é passivo e ignora preventDefault) ──
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const handler = (e: WheelEvent) => {
+      // Se está dentro de uma coluna com scroll vertical, deixa a coluna scrollar
+      const inCol = (e.target as HTMLElement).closest('[data-col-scroll="true"]');
+      if (inCol) {
+        // Mas bloqueia o vazamento para fora do board todo
+        e.stopPropagation();
+        return;
+      }
+      // Scroll horizontal puro (trackpad) — deixa o browser tratar
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      // Redireciona scroll vertical → horizontal no board
+      e.preventDefault();
+      el.scrollLeft += e.deltaY * 1.5;
+    };
+
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
+
   useEffect(() => {
     const checkColdLeads = () => {
       const cooled = localPatients.filter(p => {
@@ -886,15 +910,7 @@ const CRMi: React.FC<CRMiProps> = ({
           <div
             ref={scrollContainerRef}
             className="flex gap-3 overflow-x-auto pb-3 h-full items-start crm-hscroll"
-            onWheel={e => {
-              const inCol = (e.target as HTMLElement).closest('[data-col-scroll="true"]');
-              if (inCol) return;
-              if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-              e.preventDefault();
-              if (scrollContainerRef.current) {
-                scrollContainerRef.current.scrollLeft += e.deltaY * 1.5;
-              }
-            }}
+
           >
             {Object.entries(COLUMNS).map(([columnId, config]) => {
               const columnPatients = getPatientsByStatus(columnId);
@@ -933,7 +949,7 @@ const CRMi: React.FC<CRMiProps> = ({
                         {...provided.droppableProps}
                         ref={provided.innerRef}
                         data-col-scroll="true"
-                        className={`flex-1 p-2.5 overflow-y-auto min-h-[140px] transition-colors duration-150 ${
+                        className={`flex-1 p-2.5 overflow-y-auto overscroll-contain min-h-[140px] transition-colors duration-150 ${
                           snapshot.isDraggingOver ? 'bg-indigo-50/50' : ''
                         }`}
                       >
