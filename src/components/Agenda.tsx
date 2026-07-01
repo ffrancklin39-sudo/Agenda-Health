@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Clock, ChevronLeft, ChevronRight, Calendar as CalIcon, Plus, X, Check,
+  Clock, ChevronLeft, ChevronRight, ChevronDown, Calendar as CalIcon, Plus, X, Check,
   Search, CheckCircle2, AlertCircle, Loader2, User, FileText, Phone,
   Activity, XCircle, RefreshCcw, UserX, CalendarClock, CheckCheck,
 } from 'lucide-react';
@@ -1227,27 +1227,37 @@ const Agenda: React.FC<Props> = ({
           const StatusIcon = statusCfg.icon;
           return (
             <div className="flex items-center gap-1.5 mt-0.5 relative">
-              {/* Ícone de status — clicável para trocar sem abrir modal */}
+              {/* Ícone de status — visual (indicador), com tooltip no hover */}
+              <span title={`Status: ${statusCfg.label}`} className="flex-shrink-0 leading-none">
+                <StatusIcon
+                  className={`${scale > 1 ? 'w-4 h-4' : 'w-3.5 h-3.5'}`}
+                  style={{ color: statusCfg.iconColor }}
+                />
+              </span>
+              <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate flex-1 min-w-0`}>
+                {groupServiceNames ? groupServiceNames.join(' + ') : (service?.name || 'Consulta')}
+                {scale > 1 && prof ? ` · ${prof.name}` : ''}
+              </p>
+              {/* Botão de alterar status — aparece apenas no hover do card */}
               <div
-                className="flex items-center justify-center flex-shrink-0 rounded cursor-pointer hover:opacity-70 transition-opacity"
+                className="flex-shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity flex items-center gap-0.5 px-1 py-0.5 rounded cursor-pointer hover:bg-black/10"
                 style={{ color: statusCfg.iconColor }}
                 onMouseDown={e => e.stopPropagation()}
                 onClick={e => {
                   e.stopPropagation();
                   setStatusMenuAptId(prev => prev === apt.id ? null : apt.id);
                 }}
-                title={statusCfg.label}
+                title="Alterar status"
               >
-                <StatusIcon className={scale > 1 ? 'w-3.5 h-3.5' : 'w-3 h-3'} />
+                {scale > 1 && (
+                  <span className="text-[9px] font-bold whitespace-nowrap leading-none">{statusCfg.label}</span>
+                )}
+                <ChevronDown className="w-3 h-3" />
               </div>
-              <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate`}>
-                {groupServiceNames ? groupServiceNames.join(' + ') : (service?.name || 'Consulta')}
-                {scale > 1 && prof ? ` · ${prof.name}` : ''}
-              </p>
               {/* Mini dropdown de status */}
               {statusMenuAptId === apt.id && (
                 <div
-                  className="absolute left-0 top-5 z-50 bg-white rounded-xl shadow-xl border border-slate-100 py-1 min-w-[168px]"
+                  className="absolute right-0 top-6 z-50 bg-white rounded-xl shadow-xl border border-slate-100 py-1 min-w-[172px]"
                   onMouseDown={e => e.stopPropagation()}
                   onClick={e => e.stopPropagation()}
                 >
@@ -1257,13 +1267,13 @@ const Agenda: React.FC<Props> = ({
                     return (
                       <button
                         key={key}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-slate-50 transition-colors ${isActive ? 'font-bold' : 'font-medium'}`}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-slate-50 transition-colors ${isActive ? 'font-bold bg-slate-50' : 'font-medium'}`}
                         style={{ color: cfg.iconColor }}
                         onClick={() => updateAptStatus(apt.id, key)}
                       >
                         <Ico className="w-3.5 h-3.5 shrink-0" />
                         {cfg.label}
-                        {isActive && <span className="ml-auto text-[9px] opacity-50">✓</span>}
+                        {isActive && <span className="ml-auto text-[9px] opacity-40">✓</span>}
                       </button>
                     );
                   })}
