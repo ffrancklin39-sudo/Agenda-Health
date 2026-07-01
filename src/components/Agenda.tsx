@@ -1053,10 +1053,12 @@ const Agenda: React.FC<Props> = ({
 
   // ─────────────────────────── AptCard ─────────────────────────────────────
   // Defined as a render function (not JSX component) to avoid remount issues.
-  // Atualiza status do agendamento diretamente do card (sem abrir modal)
+  // Atualiza status do agendamento diretamente do popover de hover
   const updateAptStatus = async (id: string, newStatus: AptStatus) => {
+    // Optimistic: atualiza UI instantaneamente sem esperar o realtime
+    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+    setHoverCard(null);
     await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-    setStatusMenuAptId(null);
   };
 
   const renderCard = (
@@ -2522,89 +2524,77 @@ const Agenda: React.FC<Props> = ({
         const top  = Math.min(Math.max(hoverCard.y, 12), window.innerHeight - 260);
         return (
           <div
-            style={{ position: 'fixed', left, top, width: POP_W, zIndex: 70 }}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-3.5 pointer-events-auto"
+            style={{ position: 'fixed', left, top, width: POP_W, zIndex: 70,
+              boxShadow: '0 4px 24px -4px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04)',
+              borderRadius: 14,
+            }}
+            className="bg-white pointer-events-auto overflow-hidden"
             onMouseEnter={() => {
               if (closeHoverRef.current) { clearTimeout(closeHoverRef.current); closeHoverRef.current = null; }
             }}
-            onMouseLeave={() => { setHoverCard(null); }}
+            onMouseLeave={() => setHoverCard(null)}
           >
-            {/* Paciente */}
-            <p className="text-sm font-black text-slate-800 truncate">{patName}</p>
+            {/* ── Corpo principal ── */}
+            <div className="px-4 pt-3.5 pb-3">
+              {/* Nome */}
+              <p className="text-[13px] font-semibold text-slate-700 truncate leading-snug">{patName}</p>
 
-            {/* Serviço(s) — sempre visível */}
-            <div className="mt-1.5 space-y-0.5">
-              {serviceNames.map((name, i) => (
-                <p key={i} className="flex items-center gap-1.5 text-[11px] text-indigo-600 font-semibold truncate">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                  {name}
+              {/* Serviço(s) */}
+              <p className="text-[11px] text-indigo-400 font-medium truncate mt-0.5 leading-snug">
+                {serviceNames.join('  ·  ')}
+              </p>
+
+              {/* Telefone · idade — inline sem ícones */}
+              {(hp?.phone || age !== null) && (
+                <p className="text-[11px] text-slate-400 mt-2 leading-snug">
+                  {[hp?.phone, age !== null ? `${age} anos` : null].filter(Boolean).join('  ·  ')}
                 </p>
-              ))}
+              )}
+
+              {/* Alerta — sem ícone, pill suave */}
+              {hp?.alerts?.trim() && (
+                <p className="mt-2 text-[10px] text-amber-600 bg-amber-50 rounded-lg px-2.5 py-1.5 leading-snug line-clamp-2">
+                  {hp.alerts}
+                </p>
+              )}
+
+              {/* Observação — itálico sutil */}
+              {apt.notes?.trim() && (
+                <p className="mt-1.5 text-[10px] text-slate-400 italic line-clamp-2 leading-snug">{apt.notes}</p>
+              )}
             </div>
 
-            {/* Telefone + idade */}
-            {(hp?.phone || age !== null) && (
-              <div className="mt-2 space-y-1">
-                {hp?.phone && (
-                  <p className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
-                    <Phone className="w-3 h-3 shrink-0 text-slate-400" /> {hp.phone}
-                  </p>
-                )}
-                {age !== null && (
-                  <p className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
-                    <User className="w-3 h-3 shrink-0 text-slate-400" /> {age} anos
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Alertas */}
-            {hp?.alerts && hp.alerts.trim() && (
-              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-snug">
-                <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-                <span className="line-clamp-3">{hp.alerts}</span>
-              </p>
-            )}
-
-            {/* Observação */}
-            {apt.notes && apt.notes.trim() && (
-              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500 italic leading-snug">
-                <FileText className="w-3 h-3 shrink-0 mt-0.5 text-slate-400" />
-                <span className="line-clamp-3">{apt.notes}</span>
-              </p>
-            )}
-
-            {/* Status atual + 3 botões de troca rápida */}
+            {/* ── Rodapé de status ── */}
             {(() => {
               const sc = STATUS_CONFIG[(apt.status as AptStatus)] ?? STATUS_CONFIG.scheduled;
-              const ScIcon = sc.icon;
-              const QUICK: AptStatus[] = ['confirmed', 'cancelled', 'no_show'];
+              const QUICK: { key: AptStatus; Icon: typeof CheckCircle2; label: string; color: string }[] = [
+                { key: 'confirmed', Icon: CheckCircle2, label: 'Confirmado',    color: '#16a34a' },
+                { key: 'cancelled', Icon: XCircle,      label: 'Cancelado',     color: '#94a3b8' },
+                { key: 'no_show',   Icon: UserX,        label: 'Não compareceu',color: '#ef4444' },
+              ];
               return (
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  {/* Badge do status atual */}
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <ScIcon className="w-3.5 h-3.5 shrink-0" style={{ color: sc.iconColor }} />
-                    <span className="text-[11px] font-bold" style={{ color: sc.iconColor }}>{sc.label}</span>
-                  </div>
-                  {/* Botões de troca rápida */}
-                  <div className="flex gap-1.5">
-                    {QUICK.map(key => {
-                      const cfg = STATUS_CONFIG[key];
-                      const Ico = cfg.icon;
+                <div className="flex items-center px-4 py-2.5 border-t border-slate-50">
+                  {/* Status atual — texto sutil */}
+                  <span className="text-[10px] text-slate-400 font-medium mr-auto">{sc.label}</span>
+                  {/* Ícones de ação — onMouseDown para não perder para onMouseLeave */}
+                  <div className="flex items-center gap-3">
+                    {QUICK.map(({ key, Icon, label, color }) => {
                       const isActive = apt.status === key;
                       return (
                         <button
                           key={key}
-                          className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all border ${
-                            isActive
-                              ? 'border-current opacity-100 shadow-sm'
-                              : 'border-slate-100 opacity-60 hover:opacity-100 hover:border-current hover:shadow-sm'
-                          }`}
-                          style={{ color: cfg.iconColor }}
-                          onClick={() => updateAptStatus(apt.id, key)}
+                          title={label}
+                          className="transition-all duration-150"
+                          style={{ color: isActive ? color : '#cbd5e1', transform: isActive ? 'scale(1.15)' : 'scale(1)' }}
+                          onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = color; }}
+                          onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = '#cbd5e1'; }}
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!isActive) updateAptStatus(apt.id, key);
+                          }}
                         >
-                          <Ico className="w-3.5 h-3.5" />
-                          <span className="leading-tight">{cfg.label}</span>
+                          <Icon className="w-[18px] h-[18px]" />
                         </button>
                       );
                     })}
