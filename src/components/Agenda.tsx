@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock, ChevronLeft, ChevronRight, Calendar as CalIcon, Plus, X, Check,
   Search, CheckCircle2, AlertCircle, Loader2, User, FileText, Phone,
+  Activity, XCircle, RefreshCcw, UserX, CalendarClock, CheckCheck,
 } from 'lucide-react';
 import { Patient, Professional, ClinicService, Appointment } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -18,6 +19,17 @@ interface Props {
 
 type ViewType = 'diario' | 'semanal' | 'mensal';
 type EditTab  = 'agendamento' | 'ficha' | 'historico';
+
+const STATUS_CONFIG = {
+  scheduled:   { icon: CalendarClock, label: 'Agendado',         iconColor: '#94a3b8', bg: null,      opacity: 1    },
+  confirmed:   { icon: CheckCircle2,  label: 'Confirmado',       iconColor: '#16a34a', bg: '#f0fdf4',  opacity: 1    },
+  in_progress: { icon: Activity,      label: 'Em atendimento',   iconColor: '#2563eb', bg: '#eff6ff',  opacity: 1    },
+  completed:   { icon: CheckCheck,    label: 'Concluído',        iconColor: '#16a34a', bg: '#f0fdf4',  opacity: 0.75 },
+  cancelled:   { icon: XCircle,       label: 'Cancelado',        iconColor: '#94a3b8', bg: null,       opacity: 0.4  },
+  rescheduled: { icon: RefreshCcw,    label: 'Remarcado',        iconColor: '#d97706', bg: '#fffbeb',  opacity: 1    },
+  no_show:     { icon: UserX,         label: 'Não compareceu',   iconColor: '#dc2626', bg: '#fef2f2',  opacity: 0.6  },
+} as const;
+type AptStatus = keyof typeof STATUS_CONFIG;
 
 // ─── Color map ────────────────────────────────────────────────────────────────
 const PROF_COLORS: Record<string, { bg: string; border: string; text: string; dot: string }> = {
@@ -110,6 +122,7 @@ const Agenda: React.FC<Props> = ({
   const [timeLineTop, setTimeLineTop] = useState(0);
   const [saving, setSaving]           = useState(false);
   const [toast, setToast]             = useState<Toast>(null);
+  const [statusMenuAptId, setStatusMenuAptId] = useState<string | null>(null);
 
   // ── New appointment form ──
   const [formDate, setFormDate]           = useState('');
@@ -1039,6 +1052,12 @@ const Agenda: React.FC<Props> = ({
 
   // ─────────────────────────── AptCard ─────────────────────────────────────
   // Defined as a render function (not JSX component) to avoid remount issues.
+  // Atualiza status do agendamento diretamente do card (sem abrir modal)
+  const updateAptStatus = async (id: string, newStatus: AptStatus) => {
+    await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
+    setStatusMenuAptId(null);
+  };
+
   const renderCard = (
     apt: Appointment,
     topPx: number,
@@ -1095,6 +1114,8 @@ const Agenda: React.FC<Props> = ({
       return `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')} – ${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
     })();
 
+    const statusCfg = STATUS_CONFIG[(apt.status as AptStatus)] ?? STATUS_CONFIG.scheduled;
+
     // If card is being dragged to a different column, show ghost on original position
     if (movedAway) {
       return (
@@ -1126,12 +1147,12 @@ const Agenda: React.FC<Props> = ({
           left: `calc(${(colIndex / totalCols) * 100}% + ${scale > 1 ? 12 : 3}px)`,
           width: `calc(${(1 / totalCols) * 100}% - ${scale > 1 ? 24 : 6}px)`,
           height: Math.max(28, previewH - 4),
-          background:  colors.bg,
+          background:  statusCfg.bg ?? colors.bg,
           borderLeft:  apt.status === 'cancelled'
             ? `${scale > 1 ? '4px' : '3px'} dashed ${colors.border}`
             : `${scale > 1 ? '4px' : '3px'} solid ${colors.border}`,
           color:        colors.text,
-          opacity:      apt.status === 'cancelled' ? 0.45 : apt.status === 'no_show' ? 0.55 : 1,
+          opacity:      statusCfg.opacity,
           zIndex:       isDragging ? 20 : 5,
           cursor:       isDragging ? 'grabbing' : 'grab',
           boxShadow:    isDragging ? '0 8px 30px rgba(0,0,0,0.18)' : undefined,
@@ -1202,24 +1223,55 @@ const Agenda: React.FC<Props> = ({
           {patName}
         </p>
 
-        {previewH > (scale > 1 ? 44 : 38) && (
-          <div className={`flex items-center gap-1.5 mt-0.5`}>
-            {/* Avatar circular do profissional */}
-            <div
-              className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center text-white flex-shrink-0"
-              style={{ background: colors.border, fontSize: '7px', fontWeight: 700 }}
-            >
-              {(prof as any)?.photo_url
-                ? <img src={(prof as any).photo_url} alt={prof?.name} className="w-full h-full object-cover" />
-                : (prof?.name?.slice(0, 2) || '?').toUpperCase()
-              }
+        {previewH > (scale > 1 ? 44 : 38) && (() => {
+          const StatusIcon = statusCfg.icon;
+          return (
+            <div className="flex items-center gap-1.5 mt-0.5 relative">
+              {/* Ícone de status — clicável para trocar sem abrir modal */}
+              <div
+                className="flex items-center justify-center flex-shrink-0 rounded cursor-pointer hover:opacity-70 transition-opacity"
+                style={{ color: statusCfg.iconColor }}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => {
+                  e.stopPropagation();
+                  setStatusMenuAptId(prev => prev === apt.id ? null : apt.id);
+                }}
+                title={statusCfg.label}
+              >
+                <StatusIcon className={scale > 1 ? 'w-3.5 h-3.5' : 'w-3 h-3'} />
+              </div>
+              <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate`}>
+                {groupServiceNames ? groupServiceNames.join(' + ') : (service?.name || 'Consulta')}
+                {scale > 1 && prof ? ` · ${prof.name}` : ''}
+              </p>
+              {/* Mini dropdown de status */}
+              {statusMenuAptId === apt.id && (
+                <div
+                  className="absolute left-0 top-5 z-50 bg-white rounded-xl shadow-xl border border-slate-100 py-1 min-w-[168px]"
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {(Object.entries(STATUS_CONFIG) as [AptStatus, typeof STATUS_CONFIG[AptStatus]][]).map(([key, cfg]) => {
+                    const Ico = cfg.icon;
+                    const isActive = apt.status === key;
+                    return (
+                      <button
+                        key={key}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-slate-50 transition-colors ${isActive ? 'font-bold' : 'font-medium'}`}
+                        style={{ color: cfg.iconColor }}
+                        onClick={() => updateAptStatus(apt.id, key)}
+                      >
+                        <Ico className="w-3.5 h-3.5 shrink-0" />
+                        {cfg.label}
+                        {isActive && <span className="ml-auto text-[9px] opacity-50">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate`}>
-              {groupServiceNames ? groupServiceNames.join(' + ') : (service?.name || 'Consulta')}
-              {scale > 1 && prof ? ` · ${prof.name}` : ''}
-            </p>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Texto da observação — visível quando o card tem altura suficiente */}
         {apt.notes && apt.notes.trim() && previewH > (scale > 1 ? 70 : 56) && (

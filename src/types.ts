@@ -172,7 +172,7 @@ export interface Appointment {
   service_id: string;
   date_time: string;
   duration_minutes: number;
-  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+  status: 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rescheduled' | 'no_show';
   notes?: string;
   series_id?: string;
   session_number?: number;
