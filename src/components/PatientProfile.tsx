@@ -1454,7 +1454,7 @@ Paciente: ${patient.name}`
   // ── Salvar contrato ────────────────────────────────────────────────────────
   const saveContract = async () => {
     if (!form.total_amount && totalCalc === 0) {
-      showToast('error', 'Informe o valor total.'); return;
+      showToast('error', 'Informe o valor total do contrato.'); return;
     }
     setSaving(true);
     try {
@@ -1479,12 +1479,12 @@ Paciente: ${patient.name}`
         .select()
         .single();
 
-      if (cErr) throw cErr;
+      if (cErr) throw new Error(`Erro ao salvar contrato: ${cErr.message}`);
 
       // Insere itens
-      const validItems = items.filter(i => i.description);
+      const validItems = items.filter(i => i.description.trim());
       if (validItems.length > 0) {
-        await supabase.from('contract_items').insert(
+        const { error: iErr } = await supabase.from('contract_items').insert(
           validItems.map((it, idx) => ({
             contract_id: contract.id,
             service_id:  it.service_id || null,
@@ -1497,16 +1497,32 @@ Paciente: ${patient.name}`
             sort_order:  idx,
           }))
         );
+        if (iErr) throw new Error(`Erro ao salvar itens: ${iErr.message}`);
       }
 
-      showToast('success', 'Contrato salvo!');
+      // Fecha modal e reseta form
       setShowModal(false);
       setForm(blankForm());
       setItems([{ description: '', sessions: undefined, unit_price: undefined, subtotal: undefined }]);
       setTreatmentDesc('');
-      fetchContracts();
+      await fetchContracts();
+
+      // Auto-gera PDF: busca contrato completo da view (com nome do paciente etc.)
+      const { data: fullContract } = await supabase
+        .from('vw_contracts_full')
+        .select('*')
+        .eq('id', contract.id)
+        .single();
+
+      if (fullContract) {
+        await downloadPDF(fullContract as Contract);
+        showToast('success', 'Contrato salvo e PDF gerado!');
+      } else {
+        showToast('success', 'Contrato salvo!');
+      }
     } catch (e: any) {
-      showToast('error', 'Erro ao salvar: ' + (e?.message || 'tente novamente'));
+      console.error('[saveContract]', e);
+      showToast('error', e?.message || 'Erro desconhecido ao salvar');
     }
     setSaving(false);
   };
@@ -1547,7 +1563,7 @@ Paciente: ${patient.name}`
     <div className="h-full flex flex-col overflow-hidden">
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl text-sm font-bold
+        <div className={`fixed top-6 right-6 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl text-sm font-bold
           ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
           {toast.msg}
@@ -1777,21 +1793,4 @@ Paciente: ${patient.name}`
             {/* Modal footer */}
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
               <button onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
-                Cancelar
-              </button>
-              <button
-                onClick={saveContract}
-                disabled={saving}
-                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Salvar e Gerar PDF
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+                className="px-4 py-2 text
