@@ -16,6 +16,9 @@ import {
 } from '@react-pdf/renderer';
 import { Contract, ContractItem } from '../types';
 
+const LOGO_URL =
+  'https://iudghjdmfcxjcpspeify.supabase.co/storage/v1/object/public/Candia/Candia-LOGO-h%20mono%201.png';
+
 // ─── Estilos ────────────────────────────────────────────────────────────────
 
 const S = StyleSheet.create({
@@ -27,6 +30,17 @@ const S = StyleSheet.create({
     paddingBottom: 48,
     paddingHorizontal: 42,
     lineHeight: 1.45,
+  },
+
+  // Logo
+  logo: {
+    width: 140,
+    marginBottom: 10,
+    alignSelf: 'center',
+  },
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: 4,
   },
 
   // Título
@@ -255,6 +269,11 @@ const ContractDocument: React.FC<Props> = ({ contract, items }) => {
       {/* ── PÁGINA 1: Contrato ──────────────────────────────────────────── */}
       <Page size="A4" style={S.page}>
 
+        {/* Logo */}
+        <View style={S.logoWrap}>
+          <Image style={S.logo} src={LOGO_URL} />
+        </View>
+
         {/* Título */}
         <Text style={S.title}>Contrato de Prestação de Serviços</Text>
 
@@ -450,6 +469,11 @@ const ContractDocument: React.FC<Props> = ({ contract, items }) => {
 
       {/* ── PÁGINA 2: Tratamentos + Consentimento ───────────────────────── */}
       <Page size="A4" style={S.page}>
+
+        {/* Logo */}
+        <View style={S.logoWrap}>
+          <Image style={S.logo} src={LOGO_URL} />
+        </View>
 
         {/* Tratamentos contratados */}
         <Text style={[S.clauseTitle, { marginTop: 0 }]}>Tratamentos Contratados</Text>
