@@ -13,16 +13,26 @@ interface Props {
 
 const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const monthStart    = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd      = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+  const sixMonthsAgo   = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-  // Faturamento real — lê da tabela payments (status=paid, mês atual)
-  const [realRevenue, setRealRevenue]   = useState<number | null>(null);
-  const [realNetProfit, setRealNetProfit] = useState<number | null>(null);
+  const [realRevenue,      setRealRevenue]      = useState<number | null>(null);
+  const [realNetProfit,    setRealNetProfit]     = useState<number | null>(null);
+  const [lastRevenue,      setLastRevenue]       = useState<number | null>(null);
+  const [appointmentsCount, setAppointmentsCount] = useState<number | null>(null);
+  const [revenueChart,     setRevenueChart]      = useState<{ month: string; value: number }[]>([]);
+  const [chartMode,        setChartMode]         = useState<'leads' | 'revenue'>('leads');
 
   useEffect(() => {
-    const from = monthStart.toISOString();
-    const to   = monthEnd.toISOString();
+    const from    = monthStart.toISOString();
+    const to      = monthEnd.toISOString();
+    const lastFrom = lastMonthStart.toISOString();
+    const lastTo   = lastMonthEnd.toISOString();
+
+    // Faturamento mês atual
     supabase
       .from('payments')
       .select('amount, net_profit')
@@ -34,6 +44,49 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
         const rows = data || [];
         setRealRevenue(rows.reduce((s, r) => s + (r.amount || 0), 0));
         setRealNetProfit(rows.reduce((s, r) => s + (r.net_profit || 0), 0));
+      });
+
+    // Faturamento mês anterior (para comparativo)
+    supabase
+      .from('payments')
+      .select('amount')
+      .eq('status', 'paid')
+      .gte('payment_date', lastFrom)
+      .lte('payment_date', lastTo)
+      .then(({ data }) => {
+        const rows = data || [];
+        setLastRevenue(rows.reduce((s, r) => s + (r.amount || 0), 0));
+      });
+
+    // Agendamentos reais do mês (tabela appointments)
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .gte('start_time', from)
+      .lte('start_time', to)
+      .then(({ count, error }) => {
+        if (!error) setAppointmentsCount(count ?? 0);
+      });
+
+    // Receita últimos 6 meses (para gráfico)
+    supabase
+      .from('payments')
+      .select('amount, payment_date')
+      .eq('status', 'paid')
+      .gte('payment_date', sixMonthsAgo.toISOString())
+      .then(({ data }) => {
+        const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const slots = Array(6).fill(0).map((_, i) => {
+          const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+          return { month: months[d.getMonth()], year: d.getFullYear(), monthNum: d.getMonth(), value: 0 };
+        });
+        (data || []).forEach(r => {
+          if (!r.payment_date) return;
+          const d = new Date(r.payment_date);
+          const slot = slots.find(s => s.monthNum === d.getMonth() && s.year === d.getFullYear());
+          if (slot) slot.value += r.amount || 0;
+        });
+        setRevenueChart(slots);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -54,14 +107,9 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
     LEAD_STATUSES.includes((p.status || '').toLowerCase())
   );
 
-  // Agendamentos este mes
-  const scheduledThisMonth = useMemo(() =>
-    patients.filter(p => {
-      const d = p.appointment_date || p.appointmentDate;
-      if (!d) return false;
-      const dt = new Date(d);
-      return dt >= monthStart && dt <= monthEnd;
-    }), [patients]);
+  // Agendamentos este mes — usa appointmentsCount (tabela appointments)
+  // Fallback para 0 enquanto carrega
+  const scheduledThisMonthCount = appointmentsCount ?? 0;
 
   // Convertidos este mes (agendados ou confirmados, criados este mes)
   const CONVERTED = ['scheduled', 'confirmed', 'confirmado', 'pago', 'active', 'agendado'];
@@ -88,7 +136,7 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
     {
       label: 'Agendamentos',
       sublabel: 'este mês',
-      value: scheduledThisMonth.length,
+      value: scheduledThisMonthCount,
       icon: Calendar,
       color: 'text-sky-600',
       bg: 'bg-sky-50',
@@ -103,9 +151,14 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
     },
     {
       label: 'Faturamento',
-      sublabel: realNetProfit !== null
-        ? `líquido: ${fmt(realNetProfit)}`
-        : 'carregando...',
+      sublabel: (() => {
+        if (realNetProfit === null) return 'carregando...';
+        const pct = lastRevenue && lastRevenue > 0
+          ? ((( (realRevenue ?? 0) - lastRevenue) / lastRevenue) * 100).toFixed(0)
+          : null;
+        const trend = pct !== null ? (Number(pct) >= 0 ? `+${pct}%` : `${pct}%`) + ' vs mês ant.' : '';
+        return `líquido: ${fmt(realNetProfit)}${trend ? '  ·  ' + trend : ''}`;
+      })(),
       value: realRevenue !== null ? fmt(realRevenue) : '—',
       icon: DollarSign,
       color: 'text-amber-600',
@@ -178,28 +231,60 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Grafico de leads por mes */}
+        {/* Gráfico com toggle leads / receita */}
         <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                <BarChart3 className="text-indigo-600" size={20} /> Evolução de Leads Captados
+                <BarChart3 className="text-indigo-600" size={20} />
+                {chartMode === 'leads' ? 'Evolução de Leads Captados' : 'Evolução de Receita'}
               </h3>
-              <p className="text-xs text-slate-500 font-medium mt-1">Novos leads por mês — últimos 6 meses</p>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                {chartMode === 'leads' ? 'Novos leads por mês — últimos 6 meses' : 'Receita paga por mês — últimos 6 meses'}
+              </p>
+            </div>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[11px] font-bold shrink-0">
+              <button
+                onClick={() => setChartMode('leads')}
+                className={`px-3 py-1.5 transition-colors ${chartMode === 'leads' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              >Leads</button>
+              <button
+                onClick={() => setChartMode('revenue')}
+                className={`px-3 py-1.5 transition-colors ${chartMode === 'revenue' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              >Receita</button>
             </div>
           </div>
           <div className="flex-1 flex items-end justify-between gap-2 h-48 mt-auto pt-8 border-b border-slate-100 pb-2">
-            {chartData.map((data, i) => (
-              <div key={i} className="flex flex-col items-center flex-1 group">
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity mb-2 text-[10px] font-bold bg-slate-800 text-white px-2 py-1 rounded">
-                  {data.count}
-                </div>
-                <div className="w-full max-w-[40px] bg-slate-100 rounded-t-lg relative overflow-hidden flex items-end" style={{ height: '100%' }}>
-                  <div className="w-full bg-indigo-600 rounded-t-lg transition-all duration-1000 ease-out" style={{ height: data.height }} />
-                </div>
-                <span className="text-xs font-bold text-slate-500 mt-3">{data.month}</span>
-              </div>
-            ))}
+            {chartMode === 'leads'
+              ? chartData.map((data, i) => (
+                  <div key={i} className="flex flex-col items-center flex-1 group">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity mb-2 text-[10px] font-bold bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap">
+                      {data.count} leads
+                    </div>
+                    <div className="w-full max-w-[40px] bg-slate-100 rounded-t-lg relative overflow-hidden flex items-end" style={{ height: '100%' }}>
+                      <div className="w-full bg-indigo-600 rounded-t-lg transition-all duration-1000 ease-out" style={{ height: data.height }} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-500 mt-3">{data.month}</span>
+                  </div>
+                ))
+              : (() => {
+                  const maxRev = Math.max(...revenueChart.map(r => r.value), 1);
+                  return revenueChart.map((r, i) => (
+                    <div key={i} className="flex flex-col items-center flex-1 group">
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity mb-2 text-[10px] font-bold bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap">
+                        {fmt(r.value)}
+                      </div>
+                      <div className="w-full max-w-[40px] bg-slate-100 rounded-t-lg relative overflow-hidden flex items-end" style={{ height: '100%' }}>
+                        <div
+                          className="w-full bg-emerald-500 rounded-t-lg transition-all duration-1000 ease-out"
+                          style={{ height: `${Math.max((r.value / maxRev) * 100, r.value > 0 ? 4 : 0)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-slate-500 mt-3">{r.month}</span>
+                    </div>
+                  ));
+                })()
+            }
           </div>
         </div>
 
@@ -288,7 +373,7 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
             </div>
             <div className="flex items-center justify-between bg-white/10 px-4 py-3 rounded-xl border border-white/10">
               <span className="text-xs font-semibold text-indigo-100">Agendamentos</span>
-              <span className="text-lg font-black">{scheduledThisMonth.length}</span>
+              <span className="text-lg font-black">{scheduledThisMonthCount}</span>
             </div>
             <div className="flex items-center justify-between bg-white/10 px-4 py-3 rounded-xl border border-white/10">
               <span className="text-xs font-semibold text-indigo-100">Taxa de conversão</span>
