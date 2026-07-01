@@ -7,6 +7,7 @@ import {
   Phone, MessageCircle, DollarSign, Check, UserPlus, BellRing, Bell,
   Edit2, Trash2, AlarmClock, AlignLeft, X, Stethoscope, Search, Clock, History,
   Sparkles, Flame, Thermometer, Snowflake, RefreshCw, Target, Copy, CopyCheck,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
 import { analyzePatient, isGeminiConfigured } from '../services/geminiService';
@@ -145,6 +146,15 @@ const CRMi: React.FC<CRMiProps> = ({
   useEffect(() => {
     setLocalPatients(initialPatients);
   }, [initialPatients]);
+
+  // ── Cards colapsados/expandidos ──────────────────────────────────────────────
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const toggleCard = (id: string) =>
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   // ── Atribuição de responsável ─────────────────────────────────────────────
   // Controla qual card está com o seletor de responsável aberto no momento
@@ -877,6 +887,8 @@ const CRMi: React.FC<CRMiProps> = ({
             ref={scrollContainerRef}
             className="flex gap-3 overflow-x-auto pb-3 h-full items-start crm-hscroll"
             onWheel={e => {
+              const inCol = (e.target as HTMLElement).closest('[data-col-scroll="true"]');
+              if (inCol) return;
               if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
               e.preventDefault();
               if (scrollContainerRef.current) {
@@ -920,6 +932,7 @@ const CRMi: React.FC<CRMiProps> = ({
                       <div
                         {...provided.droppableProps}
                         ref={provided.innerRef}
+                        data-col-scroll="true"
                         className={`flex-1 p-2.5 overflow-y-auto min-h-[140px] transition-colors duration-150 ${
                           snapshot.isDraggingOver ? 'bg-indigo-50/50' : ''
                         }`}
@@ -948,66 +961,101 @@ const CRMi: React.FC<CRMiProps> = ({
                           const assignedProfessional = patient.assigned_to
                             ? professionals.find(pr => String(pr.id) === String(patient.assigned_to)) || null
                             : null;
+                          const isExpanded = expandedCards.has(String(patient.id));
+                          const entryRef = patient.stage_entered_at || patient.created_at;
+                          const entryDateStr = entryRef
+                            ? new Date(entryRef).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+                            : null;
+                          const tempDotColor =
+                            patient.lead_temperature === 'quente' ? 'bg-red-400' :
+                            patient.lead_temperature === 'morno'  ? 'bg-amber-400' :
+                            patient.lead_temperature === 'frio'   ? 'bg-sky-400' : '';
 
                           return (
-                            <Draggable
-                              key={patient.id}
-                              draggableId={String(patient.id)}
-                              index={index}
-                            >
+                            <Draggable key={patient.id} draggableId={String(patient.id)} index={index}>
                               {(provided, snapshot) => (
                                 <div
                                   ref={provided.innerRef}
                                   {...provided.draggableProps}
                                   {...provided.dragHandleProps}
-                                  style={{
-                                    userSelect: 'none',
-                                    marginBottom: '10px',
-                                    ...provided.draggableProps.style,
-                                  }}
-                                  className={`bg-white rounded-xl border flex flex-col overflow-hidden transition-shadow ${
+                                  style={{ userSelect: 'none', marginBottom: '6px', ...provided.draggableProps.style }}
+                                  className={`bg-white rounded-xl border overflow-hidden transition-shadow ${
                                     snapshot.isDragging
                                       ? 'border-indigo-400 shadow-2xl ring-2 ring-indigo-200'
                                       : isUrgent
-                                      ? 'border-amber-300 shadow-sm hover:shadow-md hover:border-amber-400'
-                                      : 'border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300'
+                                      ? 'border-amber-300 shadow-sm hover:shadow-md'
+                                      : 'border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-200'
                                   }`}
                                 >
-                                  {/* Barra de urgência */}
-                                  {isUrgent && (
-                                    <div className="h-0.5 w-full bg-gradient-to-r from-amber-400 to-orange-400" />
-                                  )}
-                                  {/* Barra de "atendido" */}
-                                  {columnId === 'confirmed' && (
-                                    <div className="h-0.5 w-full bg-gradient-to-r from-emerald-400 to-teal-400" />
-                                  )}
+                                  {/* ── LINHA COMPACTA (sempre visível) ── */}
+                                  <div
+                                    className="flex items-center gap-2 px-2.5 py-2 cursor-pointer select-none"
+                                    onClick={() => toggleCard(String(patient.id))}
+                                  >
+                                    <div className={`w-0.5 self-stretch rounded-full shrink-0 ${config.accent}`} />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1">
+                                        <span className="font-semibold text-[13px] text-slate-800 truncate leading-tight">
+                                          {patient.name || 'Sem nome'}
+                                        </span>
+                                        {tempDotColor && (
+                                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tempDotColor}`} title={patient.lead_temperature || ''} />
+                                        )}
+                                        {patient.reminderDate && <BellRing size={10} className="text-amber-500 shrink-0" />}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <span className="text-[11px] text-slate-500 truncate">{patient.phone || '—'}</span>
+                                        {days > 0 && (
+                                          <span className={`text-[10px] font-medium shrink-0 ${isUrgent ? 'text-amber-600' : 'text-slate-400'}`}>
+                                            · {days}d{entryDateStr ? ` (${entryDateStr})` : ''}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {sourceConfig && (
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${sourceConfig.bg} ${sourceConfig.color}`}>
+                                          {sourceConfig.label}
+                                        </span>
+                                      )}
+                                      {assignedProfessional && (
+                                        <span
+                                          style={{ backgroundColor: assignedProfessional.color || '#94a3b8' }}
+                                          className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-white"
+                                          title={assignedProfessional.name}
+                                        >{getInitials(assignedProfessional.name)}</span>
+                                      )}
+                                      {isExpanded
+                                        ? <ChevronUp size={12} className="text-slate-400" />
+                                        : <ChevronDown size={12} className="text-slate-400" />
+                                      }
+                                    </div>
+                                  </div>
 
-                                  <div className="p-3">
-                                    {/* Nome + score + lembrete */}
-                                    <div className="flex justify-between items-start mb-1.5 gap-1.5">
-                                      <h4
-                                        onClick={() => onSelectPatient?.(String(patient.id))}
-                                        className="font-bold text-sm text-slate-800 cursor-pointer hover:text-indigo-600 transition-colors truncate flex-1 leading-tight"
-                                        title="Abrir Prontuário"
-                                      >
-                                        {patient.name || 'Sem nome'}
-                                      </h4>
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        {/* Responsável pelo lead */}
-                                        <div className="relative">
+                                  {/* ── DETALHES EXPANDIDOS ── */}
+                                  {isExpanded && (
+                                    <div className="px-3 pb-3 border-t border-slate-100">
+                                      {/* Badges */}
+                                      <div className="flex flex-wrap items-center gap-1 pt-2 mb-2">
+                                        {leadScore && (
+                                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-bold ${leadScore.color} ${leadScore.bg}`} title={`Score: ${leadScore.score}/100`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${leadScore.dot}`} />{leadScore.label}
+                                          </span>
+                                        )}
+                                        {patient.lead_temperature && TEMPERATURE_STYLES[patient.lead_temperature] && (
+                                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${TEMPERATURE_STYLES[patient.lead_temperature].color} ${TEMPERATURE_STYLES[patient.lead_temperature].bg}`} title={patient.lead_temperature_reason || ''}>
+                                            {React.createElement(TEMPERATURE_STYLES[patient.lead_temperature].Icon, { size: 9 })}
+                                            {TEMPERATURE_STYLES[patient.lead_temperature].label}
+                                          </span>
+                                        )}
+                                        {/* Atribuir responsável */}
+                                        <div className="relative ml-auto">
                                           <button
-                                            onClick={e => {
-                                              e.stopPropagation();
-                                              setAssigningPatientId(prev => prev === String(patient.id) ? null : String(patient.id));
-                                            }}
+                                            onClick={e => { e.stopPropagation(); setAssigningPatientId(prev => prev === String(patient.id) ? null : String(patient.id)); }}
                                             title={assignedProfessional ? `Responsável: ${assignedProfessional.name}` : 'Atribuir responsável'}
-                                            className="block"
                                           >
                                             {assignedProfessional ? (
-                                              <span
-                                                style={{ backgroundColor: assignedProfessional.color || '#94a3b8' }}
-                                                className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-sm hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 transition-all"
-                                              >
+                                              <span style={{ backgroundColor: assignedProfessional.color || '#94a3b8' }} className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-sm hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 transition-all">
                                                 {getInitials(assignedProfessional.name)}
                                               </span>
                                             ) : (
@@ -1016,199 +1064,68 @@ const CRMi: React.FC<CRMiProps> = ({
                                               </span>
                                             )}
                                           </button>
-
                                           {assigningPatientId === String(patient.id) && (
-                                            <div
-                                              onClick={e => e.stopPropagation()}
-                                              className="absolute right-0 top-6 z-30 bg-white border border-slate-200 rounded-lg shadow-xl w-48 py-1 max-h-56 overflow-y-auto"
-                                            >
-                                              <p className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                                                Atribuir responsável
-                                              </p>
-                                              <button
-                                                onClick={() => handleAssignResponsible(String(patient.id), null)}
-                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50 transition-colors"
-                                              >
-                                                <span className="w-5 h-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center shrink-0">
-                                                  <X size={9} className="text-slate-300" />
-                                                </span>
+                                            <div onClick={e => e.stopPropagation()} className="absolute right-0 top-6 z-30 bg-white border border-slate-200 rounded-lg shadow-xl w-48 py-1 max-h-56 overflow-y-auto">
+                                              <p className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Atribuir responsável</p>
+                                              <button onClick={() => handleAssignResponsible(String(patient.id), null)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50 transition-colors">
+                                                <span className="w-5 h-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center shrink-0"><X size={9} className="text-slate-300" /></span>
                                                 Sem responsável
                                               </button>
                                               {professionals.map(pro => (
-                                                <button
-                                                  key={pro.id}
-                                                  onClick={() => handleAssignResponsible(String(patient.id), String(pro.id))}
-                                                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                                                >
-                                                  <span
-                                                    style={{ backgroundColor: pro.color || '#94a3b8' }}
-                                                    className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0"
-                                                  >
-                                                    {getInitials(pro.name)}
-                                                  </span>
+                                                <button key={pro.id} onClick={() => handleAssignResponsible(String(patient.id), String(pro.id))} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition-colors">
+                                                  <span style={{ backgroundColor: pro.color || '#94a3b8' }} className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0">{getInitials(pro.name)}</span>
                                                   <span className="truncate">{pro.name}</span>
                                                 </button>
                                               ))}
-                                              {professionals.length === 0 && (
-                                                <p className="px-3 py-2 text-[11px] text-slate-400">Nenhum profissional cadastrado.</p>
-                                              )}
+                                              {professionals.length === 0 && <p className="px-3 py-2 text-[11px] text-slate-400">Nenhum profissional cadastrado.</p>}
                                             </div>
                                           )}
                                         </div>
-                                        {leadScore && (
-                                          <span
-                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-bold ${leadScore.color} ${leadScore.bg}`}
-                                            title={`Score: ${leadScore.score}/100`}
-                                          >
-                                            <span className={`w-1.5 h-1.5 rounded-full ${leadScore.dot}`} />
-                                            {leadScore.label}
-                                          </span>
-                                        )}
-                                        {patient.lead_temperature && TEMPERATURE_STYLES[patient.lead_temperature] && (
-                                          <span
-                                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${TEMPERATURE_STYLES[patient.lead_temperature].color} ${TEMPERATURE_STYLES[patient.lead_temperature].bg}`}
-                                            title={patient.lead_temperature_reason || 'Análise de IA'}
-                                          >
-                                            {React.createElement(TEMPERATURE_STYLES[patient.lead_temperature].Icon, { size: 9 })}
-                                            {TEMPERATURE_STYLES[patient.lead_temperature].label}
-                                          </span>
-                                        )}
-                                        {patient.reminderDate && (
-                                          <BellRing size={13} className="text-amber-500 mt-0.5" />
-                                        )}
                                       </div>
-                                    </div>
 
-                                    {/* Telefone */}
-                                    <p className="flex items-center text-[11px] text-slate-500 mb-2">
-                                      <Phone size={10} className="mr-1.5 text-slate-400 shrink-0" />
-                                      <span className="truncate">{patient.phone || '—'}</span>
-                                    </p>
+                                      {/* Valor */}
+                                      {safeParseFloat(patient.price) > 0 && (
+                                        <div className="mb-2 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border border-emerald-100">
+                                          <DollarSign size={10} />
+                                          {safeParseFloat(patient.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
+                                      )}
 
-                                    {/* Badge de origem */}
-                                    {sourceConfig && (
-                                      <span
-                                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border mb-2 ${sourceConfig.bg} ${sourceConfig.color}`}
-                                      >
-                                        {sourceConfig.label}
-                                      </span>
-                                    )}
-
-                                    {/* Valor */}
-                                    {safeParseFloat(patient.price) > 0 && (
-                                      <div className="mb-2 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border border-emerald-100">
-                                        <DollarSign size={10} />
-                                        {safeParseFloat(patient.price).toLocaleString('pt-BR', {
-                                          minimumFractionDigits: 2,
-                                        })}
+                                      {/* Anotação */}
+                                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 relative mb-2">
+                                        <AlignLeft size={10} className="absolute top-2 left-2 text-slate-400" />
+                                        <textarea
+                                          className="w-full text-[11px] text-slate-600 bg-transparent outline-none resize-none pl-4 placeholder-slate-400 leading-relaxed"
+                                          placeholder="Anotação rápida..."
+                                          rows={2}
+                                          defaultValue={patient.observation || ''}
+                                          onBlur={e => handleSaveObservation(String(patient.id), e.target.value)}
+                                          onClick={e => e.stopPropagation()}
+                                        />
                                       </div>
-                                    )}
 
-                                    {/* Anotação */}
-                                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 relative mb-2">
-                                      <AlignLeft size={10} className="absolute top-2 left-2 text-slate-400" />
-                                      <textarea
-                                        className="w-full text-[11px] text-slate-600 bg-transparent outline-none resize-none pl-4 placeholder-slate-400 leading-relaxed"
-                                        placeholder="Anotação rápida..."
-                                        rows={2}
-                                        defaultValue={patient.observation || ''}
-                                        onBlur={e => handleSaveObservation(String(patient.id), e.target.value)}
-                                      />
-                                    </div>
-
-                                    {/* Dias no funil */}
-                                    {days > 0 && (
-                                      <div className={`flex items-center gap-1 text-[10px] mb-2 ${isUrgent ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
-                                        <Clock size={9} />
-                                        <span>{days === 1 ? '1 dia no funil' : `${days} dias no funil`}</span>
-                                        {isUrgent && <span>· atenção!</span>}
+                                      {/* Ações */}
+                                      <div className="flex items-center gap-1 pt-1.5 border-t border-slate-100">
+                                        <button onClick={e => { e.stopPropagation(); openWhatsApp(patient.phone); }} disabled={!patient.phone} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors disabled:opacity-30" title="WhatsApp"><MessageCircle size={14} /></button>
+                                        <button onClick={e => { e.stopPropagation(); openEditModal(patient); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Editar"><Edit2 size={14} /></button>
+                                        <button onClick={e => { e.stopPropagation(); openHistoryPanel(patient); }} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors" title="Histórico"><History size={14} /></button>
+                                        <button onClick={e => { e.stopPropagation(); onSelectPatient?.(String(patient.id)); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="Abrir prontuário"><AlarmClock size={14} /></button>
+                                        <button onClick={e => { e.stopPropagation(); setDeletingPatient(patient); setDeleteReason(''); setDeleteNote(''); setShowDeleteModal(true); }} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors" title="Excluir"><Trash2 size={14} /></button>
+                                        <button
+                                          onClick={e => { e.stopPropagation(); setSelectedForReminder(patient); setReminderDate(patient.reminderDate ? String(patient.reminderDate).substring(0, 16) : ''); setReminderNote(patient.reminderNote || ''); setShowReminderModal(true); }}
+                                          className={`p-1.5 rounded-md transition-colors ml-auto ${patient.reminderDate ? 'text-amber-600 bg-amber-50' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`}
+                                          title="Lembrete"
+                                        ><Bell size={14} /></button>
                                       </div>
-                                    )}
 
-                                    {/* Ações do card */}
-                                    <div className="flex items-center gap-1 pt-2 border-t border-slate-100">
-                                      {/* WhatsApp */}
-                                      <button
-                                        onClick={e => { e.stopPropagation(); openWhatsApp(patient.phone); }}
-                                        disabled={!patient.phone}
-                                        className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                        title="Abrir WhatsApp"
-                                      >
-                                        <MessageCircle size={14} />
-                                      </button>
-
-                                      {/* Editar */}
-                                      <button
-                                        onClick={e => { e.stopPropagation(); openEditModal(patient); }}
-                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                                        title="Editar"
-                                      >
-                                        <Edit2 size={14} />
-                                      </button>
-
-                                      {/* Histórico / Timeline */}
-                                      <button
-                                        onClick={e => { e.stopPropagation(); openHistoryPanel(patient); }}
-                                        className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
-                                        title="Ver histórico"
-                                      >
-                                        <History size={14} />
-                                      </button>
-
-                                      {/* Excluir lead */}
-                                      <button
-                                        onClick={e => {
-                                          e.stopPropagation();
-                                          setDeletingPatient(patient);
-                                          setDeleteReason('');
-                                          setDeleteNote('');
-                                          setShowDeleteModal(true);
-                                        }}
-                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-                                        title="Excluir lead"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-
-                                      {/* Lembrete */}
-                                      <button
-                                        onClick={e => {
-                                          e.stopPropagation();
-                                          setSelectedForReminder(patient);
-                                          setReminderDate(
-                                            patient.reminderDate
-                                              ? String(patient.reminderDate).substring(0, 16)
-                                              : ''
-                                          );
-                                          setReminderNote(patient.reminderNote || '');
-                                          setShowReminderModal(true);
-                                        }}
-                                        className={`p-1.5 rounded-md transition-colors ml-auto ${
-                                          patient.reminderDate
-                                            ? 'text-amber-600 bg-amber-50'
-                                            : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
-                                        }`}
-                                        title="Lembrete"
-                                      >
-                                        <Bell size={14} />
-                                      </button>
+                                      {columnId === 'scheduled' && (
+                                        <button
+                                          onClick={e => { e.stopPropagation(); setPaymentPatient(patient); setShowPaymentModal(true); }}
+                                          className="mt-2 w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white text-[11px] font-bold py-2 rounded-lg transition-colors"
+                                        ><Stethoscope size={12} /> Confirmar Atendimento</button>
+                                      )}
                                     </div>
-
-                                    {/* Botão Confirmar Atendimento (coluna Agendados) */}
-                                    {columnId === 'scheduled' && (
-                                      <button
-                                        onClick={e => {
-                                          e.stopPropagation();
-                                          setPaymentPatient(patient);
-                                          setShowPaymentModal(true);
-                                        }}
-                                        className="mt-2 w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white text-[11px] font-bold py-2 rounded-lg transition-colors"
-                                      >
-                                        <Stethoscope size={12} />
-                                        Confirmar Atendimento
-                                      </button>
-                                    )}
-                                  </div>
+                                  )}
                                 </div>
                               )}
                             </Draggable>
