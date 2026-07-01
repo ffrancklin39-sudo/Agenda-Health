@@ -438,6 +438,7 @@ const Agenda: React.FC<Props> = ({
   // ── Hover do card: popover com dados rápidos do paciente (telefone, idade, alertas/observação) ──
   const [hoverCard, setHoverCard] = useState<{ aptId: string; x: number; y: number } | null>(null);
   const hoverTimerRef             = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeHoverRef             = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Esconde o popover assim que um drag/resize começa (evita sobrepor o card sendo arrastado)
   useEffect(() => {
@@ -1170,7 +1171,10 @@ const Agenda: React.FC<Props> = ({
         }}
         onMouseLeave={() => {
           if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
-          setHoverCard(prev => (prev?.aptId === apt.id ? null : prev));
+          if (closeHoverRef.current) clearTimeout(closeHoverRef.current);
+          closeHoverRef.current = setTimeout(() => {
+            setHoverCard(prev => (prev?.aptId === apt.id ? null : prev));
+          }, 160);
         }}
         onMouseDown={e => {
           // Don't start move-drag from name or resize handle
@@ -1226,59 +1230,16 @@ const Agenda: React.FC<Props> = ({
         {previewH > (scale > 1 ? 44 : 38) && (() => {
           const StatusIcon = statusCfg.icon;
           return (
-            <div className="flex items-center gap-1.5 mt-0.5 relative">
-              {/* Ícone de status — visual (indicador), com tooltip no hover */}
-              <span title={`Status: ${statusCfg.label}`} className="flex-shrink-0 leading-none">
-                <StatusIcon
-                  className={`${scale > 1 ? 'w-4 h-4' : 'w-3.5 h-3.5'}`}
-                  style={{ color: statusCfg.iconColor }}
-                />
-              </span>
-              <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate flex-1 min-w-0`}>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {/* Ícone de status — visual apenas; troca pelo popover de hover */}
+              <StatusIcon
+                className={`flex-shrink-0 ${scale > 1 ? 'w-4 h-4' : 'w-3.5 h-3.5'}`}
+                style={{ color: statusCfg.iconColor }}
+              />
+              <p className={`${scale > 1 ? 'text-[11px]' : 'text-[9px]'} font-semibold opacity-70 truncate`}>
                 {groupServiceNames ? groupServiceNames.join(' + ') : (service?.name || 'Consulta')}
                 {scale > 1 && prof ? ` · ${prof.name}` : ''}
               </p>
-              {/* Botão de alterar status — aparece apenas no hover do card */}
-              <div
-                className="flex-shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity flex items-center gap-0.5 px-1 py-0.5 rounded cursor-pointer hover:bg-black/10"
-                style={{ color: statusCfg.iconColor }}
-                onMouseDown={e => e.stopPropagation()}
-                onClick={e => {
-                  e.stopPropagation();
-                  setStatusMenuAptId(prev => prev === apt.id ? null : apt.id);
-                }}
-                title="Alterar status"
-              >
-                {scale > 1 && (
-                  <span className="text-[9px] font-bold whitespace-nowrap leading-none">{statusCfg.label}</span>
-                )}
-                <ChevronDown className="w-3 h-3" />
-              </div>
-              {/* Mini dropdown de status */}
-              {statusMenuAptId === apt.id && (
-                <div
-                  className="absolute right-0 top-6 z-50 bg-white rounded-xl shadow-xl border border-slate-100 py-1 min-w-[172px]"
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => e.stopPropagation()}
-                >
-                  {(Object.entries(STATUS_CONFIG) as [AptStatus, typeof STATUS_CONFIG[AptStatus]][]).map(([key, cfg]) => {
-                    const Ico = cfg.icon;
-                    const isActive = apt.status === key;
-                    return (
-                      <button
-                        key={key}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-slate-50 transition-colors ${isActive ? 'font-bold bg-slate-50' : 'font-medium'}`}
-                        style={{ color: cfg.iconColor }}
-                        onClick={() => updateAptStatus(apt.id, key)}
-                      >
-                        <Ico className="w-3.5 h-3.5 shrink-0" />
-                        {cfg.label}
-                        {isActive && <span className="ml-auto text-[9px] opacity-40">✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           );
         })()}
@@ -2562,7 +2523,11 @@ const Agenda: React.FC<Props> = ({
         return (
           <div
             style={{ position: 'fixed', left, top, width: POP_W, zIndex: 70 }}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-3.5 pointer-events-none"
+            className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-3.5 pointer-events-auto"
+            onMouseEnter={() => {
+              if (closeHoverRef.current) { clearTimeout(closeHoverRef.current); closeHoverRef.current = null; }
+            }}
+            onMouseLeave={() => { setHoverCard(null); }}
           >
             {/* Paciente */}
             <p className="text-sm font-black text-slate-800 truncate">{patName}</p>
@@ -2608,6 +2573,45 @@ const Agenda: React.FC<Props> = ({
                 <span className="line-clamp-3">{apt.notes}</span>
               </p>
             )}
+
+            {/* Status atual + 3 botões de troca rápida */}
+            {(() => {
+              const sc = STATUS_CONFIG[(apt.status as AptStatus)] ?? STATUS_CONFIG.scheduled;
+              const ScIcon = sc.icon;
+              const QUICK: AptStatus[] = ['confirmed', 'cancelled', 'no_show'];
+              return (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  {/* Badge do status atual */}
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <ScIcon className="w-3.5 h-3.5 shrink-0" style={{ color: sc.iconColor }} />
+                    <span className="text-[11px] font-bold" style={{ color: sc.iconColor }}>{sc.label}</span>
+                  </div>
+                  {/* Botões de troca rápida */}
+                  <div className="flex gap-1.5">
+                    {QUICK.map(key => {
+                      const cfg = STATUS_CONFIG[key];
+                      const Ico = cfg.icon;
+                      const isActive = apt.status === key;
+                      return (
+                        <button
+                          key={key}
+                          className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all border ${
+                            isActive
+                              ? 'border-current opacity-100 shadow-sm'
+                              : 'border-slate-100 opacity-60 hover:opacity-100 hover:border-current hover:shadow-sm'
+                          }`}
+                          style={{ color: cfg.iconColor }}
+                          onClick={() => updateAptStatus(apt.id, key)}
+                        >
+                          <Ico className="w-3.5 h-3.5" />
+                          <span className="leading-tight">{cfg.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
