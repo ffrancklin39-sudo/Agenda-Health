@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   User, Briefcase, Building2, Shield, Clock,
   Plus, Pencil, Trash2, Check, X, Loader2, CheckCircle2, AlertCircle,
-  Wallet,
+  Wallet, Search,
 } from 'lucide-react';
 import { Professional, ClinicService, UserProfileRow, UserRole } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -246,6 +247,7 @@ const Settings: React.FC<Props> = ({
   };
 
   // Service state
+  const [svcSearch, setSvcSearch]     = useState('');
   const [editingSvc, setEditingSvc]   = useState<ClinicService | null>(null);
   const [svcForm, setSvcForm]         = useState(blankSvc());
   const [showSvcForm, setShowSvcForm] = useState(false);
@@ -641,97 +643,135 @@ const Settings: React.FC<Props> = ({
       {/* Servicos */}
       {tab === 'servicos' && (
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs text-slate-400 font-semibold">{services.length} cadastrado(s)</p>
+          {/* Header: contagem + busca + botão */}
+          <div className="flex items-center gap-3 mb-4">
+            <p className="text-xs text-slate-400 font-semibold shrink-0">
+              {services.filter(sv => sv.name.toLowerCase().includes(svcSearch.toLowerCase()) || (sv.category||'').toLowerCase().includes(svcSearch.toLowerCase())).length} de {services.length}
+            </p>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                placeholder="Buscar serviço..."
+                value={svcSearch}
+                onChange={e => setSvcSearch(e.target.value)}
+              />
+            </div>
             <button onClick={openNewSvc}
-              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-900/15">
-              <Plus className="w-3.5 h-3.5" /> Novo Servico
+              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-900/15 shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Novo Serviço
             </button>
           </div>
 
-          {showSvcForm && (
-            <div className="mb-5 bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
-              <h4 className="text-sm font-black text-slate-800">{editingSvc ? 'Editar Servico' : 'Novo Servico'}</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2 space-y-1">
+          <div className="space-y-2">
+            {(() => {
+              const filteredSvcs = services.filter(sv =>
+                sv.name.toLowerCase().includes(svcSearch.toLowerCase()) ||
+                (sv.category||'').toLowerCase().includes(svcSearch.toLowerCase())
+              );
+              if (filteredSvcs.length === 0) return (
+                <div className="text-center py-12">
+                  <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-20 text-slate-400" />
+                  <p className="text-sm font-bold text-slate-400">
+                    {svcSearch ? 'Nenhum serviço encontrado' : 'Nenhum serviço cadastrado'}
+                  </p>
+                </div>
+              );
+              return filteredSvcs.map(sv => (
+                <div key={sv.id} className="flex items-center gap-4 bg-white border border-slate-100 rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-black text-slate-800 truncate">{sv.name}</p>
+                      {sv.category && (
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-black rounded-full uppercase tracking-wide shrink-0">
+                          {sv.category}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <p className="text-xs text-slate-400 font-semibold">{sv.duration_minutes || sv.duration || 60} min</p>
+                      {sv.price > 0 && (
+                        <p className="text-xs font-bold text-emerald-600">
+                          R$ {Number(sv.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => openEditSvc(sv)} className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-indigo-600 transition-all">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => deleteSvc(sv)} className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de serviço — portal para escapar de overflow:hidden/transform dos pais */}
+      {showSvcForm && createPortal(
+        <>
+          <div className="fixed inset-0 bg-black/40 z-[60]" onClick={cancelSvcForm} />
+          <div className="fixed inset-0 z-[61] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <h3 className="font-black text-slate-800 text-sm">
+                  {editingSvc ? 'Editar Serviço' : 'Novo Serviço'}
+                </h3>
+                <button onClick={cancelSvcForm} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nome *</label>
-                  <input className="premium-input" placeholder="Ex: Consulta Medica"
+                  <input className="premium-input" placeholder="Ex: Consulta Médica"
                     value={svcForm.name} onChange={e => setSvcForm(f => ({ ...f, name: e.target.value }))} />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Categoria</label>
-                  <select className="premium-input appearance-none" value={svcForm.category}
-                    onChange={e => setSvcForm(f => ({ ...f, category: e.target.value }))}>
-                    {SERVICE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Duracao (min)</label>
-                  <input type="number" min={15} step={15} className="premium-input" placeholder="60"
-                    value={svcForm.duration}
-                    onChange={e => setSvcForm(f => ({ ...f, duration: Number(e.target.value), duration_minutes: Number(e.target.value) }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Preco (R$)</label>
-                  <input type="number" min={0} step={0.01} className="premium-input" placeholder="0,00"
-                    value={svcForm.price} onChange={e => setSvcForm(f => ({ ...f, price: Number(e.target.value) }))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Descricao</label>
-                  <input className="premium-input" placeholder="Descricao opcional"
-                    value={svcForm.description} onChange={e => setSvcForm(f => ({ ...f, description: e.target.value }))} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Categoria</label>
+                    <select className="premium-input appearance-none" value={svcForm.category}
+                      onChange={e => setSvcForm(f => ({ ...f, category: e.target.value }))}>
+                      {SERVICE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Duração (min)</label>
+                    <input type="number" min={15} step={15} className="premium-input" placeholder="60"
+                      value={svcForm.duration}
+                      onChange={e => setSvcForm(f => ({ ...f, duration: Number(e.target.value), duration_minutes: Number(e.target.value) }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Preço (R$)</label>
+                    <input type="number" min={0} step={0.01} className="premium-input" placeholder="0,00"
+                      value={svcForm.price} onChange={e => setSvcForm(f => ({ ...f, price: Number(e.target.value) }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Descrição</label>
+                    <input className="premium-input" placeholder="Opcional"
+                      value={svcForm.description} onChange={e => setSvcForm(f => ({ ...f, description: e.target.value }))} />
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-2 pt-1">
-                <button onClick={cancelSvcForm} className="px-4 py-2 border border-slate-200 text-slate-500 text-xs font-bold rounded-xl hover:bg-slate-100 transition-all">
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100">
+                <button onClick={cancelSvcForm} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
                   Cancelar
                 </button>
                 <button onClick={saveSvc} disabled={saving}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all">
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  Salvar
+                  className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {editingSvc ? 'Salvar' : 'Criar Serviço'}
                 </button>
               </div>
             </div>
-          )}
-
-          <div className="space-y-2">
-            {services.length === 0 ? (
-              <div className="text-center py-12">
-                <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-20 text-slate-400" />
-                <p className="text-sm font-bold text-slate-400">Nenhum servico cadastrado</p>
-                <p className="text-xs text-slate-400 mt-1">Clique em "Novo Servico" para comecar</p>
-              </div>
-            ) : services.map(s => (
-              <div key={s.id} className="flex items-center gap-4 bg-white border border-slate-100 rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-black text-slate-800 truncate">{s.name}</p>
-                    <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-black rounded-full uppercase tracking-wide shrink-0">
-                      {s.category}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <p className="text-xs text-slate-400 font-semibold">{s.duration_minutes || s.duration || 60} min</p>
-                    {s.price > 0 && (
-                      <p className="text-xs font-bold text-emerald-600">
-                        R$ {Number(s.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => openEditSvc(s)} className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-indigo-600 transition-all">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => deleteSvc(s)} className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
           </div>
-        </div>
+        </>,
+        document.body
       )}
 
       {/* Clinica */}
