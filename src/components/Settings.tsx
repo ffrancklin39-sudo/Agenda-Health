@@ -110,23 +110,29 @@ const Settings: React.FC<Props> = ({
   const sendInvite = async () => {
     if (!inviteEmail.trim()) { setInviteError('Informe o email.'); return; }
     setInviting(true); setInviteError(null);
-    const { data: { session: s } } = await supabase.auth.getSession();
-    const token = s?.access_token;
-    if (!token) { setInviteError('Sessao expirada.'); setInviting(false); return; }
 
-    const res  = await supabase.functions.invoke('invite-user', {
-      body: { email: inviteEmail.trim().toLowerCase(), role: inviteRole },
-    });
-    setInviting(false);
-    if (res.error || (res.data && res.data.error)) {
-      setInviteError(res.data?.error || res.error?.message || 'Erro ao enviar convite.');
-      return;
+    try {
+      const res = await supabase.functions.invoke('invite-user', {
+        body: { email: inviteEmail.trim().toLowerCase(), role: inviteRole },
+      });
+
+      // Extrai mensagem de erro: prefere o body JSON, cai no erro generico
+      const errMsg = res.data?.error ?? (res.error ? res.error.message : null);
+      if (errMsg) {
+        setInviteError(errMsg);
+        setInviting(false);
+        return;
+      }
+
+      setShowInvite(false);
+      setInviteEmail('');
+      setInviteRole('RECEPTIONIST');
+      showToast('success', res.data?.message || 'Convite enviado!');
+      fetchUsers();
+    } catch (e: any) {
+      setInviteError(e?.message || 'Erro inesperado ao enviar convite.');
     }
-    setShowInvite(false);
-    setInviteEmail('');
-    setInviteRole('RECEPTIONIST');
-    showToast('success', res.data?.message || 'Convite enviado!');
-    fetchUsers();
+    setInviting(false);
   };
 
   const changeUserRole = async (userId: string, newRole: UserRole) => {
