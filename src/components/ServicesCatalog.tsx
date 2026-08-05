@@ -54,14 +54,16 @@ const ServicesCatalog: React.FC<Props> = ({ services, onRefresh }) => {
 
   const handleSave = async () => {
     if (!form.name.trim()) { setError('Nome é obrigatório.'); return; }
-    if (!form.price || isNaN(Number(form.price))) { setError('Preço inválido.'); return; }
+    if (form.price === '' || isNaN(Number(form.price))) { setError('Preço inválido.'); return; }
     setSaving(true); setError('');
+    const dur = parseInt(form.duration) || 60;
     const payload = {
-      name:        form.name.trim(),
-      price:       parseFloat(form.price),
-      duration:    parseInt(form.duration) || 60,
-      category:    form.category,
-      description: form.description.trim() || null,
+      name:             form.name.trim(),
+      price:            parseFloat(form.price),
+      duration:         dur,
+      duration_minutes: dur,   // compatibilidade com dados Feegow
+      category:         form.category,
+      description:      form.description.trim() || null,
     };
     const { error: sbErr } = editingId
       ? await supabase.from('services').update(payload).eq('id', editingId)
