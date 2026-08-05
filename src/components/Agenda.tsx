@@ -113,6 +113,10 @@ const Agenda: React.FC<Props> = ({
   patients, professionals, services,
   onSelectPatient, onRefresh, refreshTrigger,
 }) => {
+  // Apenas profissionais ativos — usados nos filtros e formulários
+  // (profissionais inativos ainda aparecem nos cards já agendados)
+  const activeProfs = professionals.filter(p => p.active !== false);
+
   const [view, setView]               = useState<ViewType>('semanal');
   const [selectedProf, setSelectedProf] = useState('all');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -512,7 +516,7 @@ const Agenda: React.FC<Props> = ({
     setFormTime(time);
     setFormDuration('01:00');
     setFormServiceId(services[0]?.id || '');
-    setFormProfId(professionals[0]?.id || '');
+    setFormProfId(activeProfs[0]?.id || '');
     setFormProcedures([newProcRow(services[0]?.id || '')]);
     setFormNotes('');
     setPatientQuery('');
@@ -1738,7 +1742,7 @@ const Agenda: React.FC<Props> = ({
               </div>
               <span className="truncate">Todos</span>
             </button>
-            {professionals.map(prof => {
+            {activeProfs.map(prof => {
               const c = getProfColor(prof.color);
               const initials2 = prof.name.trim().split(/\s+/).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
               return (
@@ -1935,7 +1939,7 @@ const Agenda: React.FC<Props> = ({
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
                   <select value={formProfId} onChange={e => setFormProfId(e.target.value)} className="premium-input appearance-none">
-                    {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {activeProfs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
 
@@ -2252,7 +2256,7 @@ const Agenda: React.FC<Props> = ({
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
                       <select value={editProfId} onChange={e => setEditProfId(e.target.value)} className="premium-input appearance-none">
                         <option value="">Selecione...</option>
-                        {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {activeProfs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -2425,7 +2429,7 @@ const Agenda: React.FC<Props> = ({
                   value={blockForm.professional_id}
                   onChange={e => setBlockForm(f => ({ ...f, professional_id: e.target.value }))}>
                   <option value="">Selecione...</option>
-                  {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {activeProfs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
 
