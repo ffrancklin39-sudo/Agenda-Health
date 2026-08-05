@@ -100,6 +100,35 @@ const Settings: React.FC<Props> = ({
     if (tab === 'usuarios') fetchUsers();
   }, [tab]);
 
+  // ── Convidar usuário ────────────────────────────────────────────────────
+  const [showInvite, setShowInvite]   = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole]   = useState<UserRole>('RECEPTIONIST');
+  const [inviting, setInviting]       = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  const sendInvite = async () => {
+    if (!inviteEmail.trim()) { setInviteError('Informe o email.'); return; }
+    setInviting(true); setInviteError(null);
+    const { data: { session: s } } = await supabase.auth.getSession();
+    const token = s?.access_token;
+    if (!token) { setInviteError('Sessao expirada.'); setInviting(false); return; }
+
+    const res  = await supabase.functions.invoke('invite-user', {
+      body: { email: inviteEmail.trim().toLowerCase(), role: inviteRole },
+    });
+    setInviting(false);
+    if (res.error || (res.data && res.data.error)) {
+      setInviteError(res.data?.error || res.error?.message || 'Erro ao enviar convite.');
+      return;
+    }
+    setShowInvite(false);
+    setInviteEmail('');
+    setInviteRole('RECEPTIONIST');
+    showToast('success', res.data?.message || 'Convite enviado!');
+    fetchUsers();
+  };
+
   const changeUserRole = async (userId: string, newRole: UserRole) => {
     setSavingUserId(userId);
     const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
@@ -858,12 +887,22 @@ const Settings: React.FC<Props> = ({
             <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm font-black text-slate-800">Usuários e papéis</p>
-                <button
-                  onClick={fetchUsers}
-                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
-                >
-                  Atualizar
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={fetchUsers}
+                    className="text-xs font-bold text-slate-400 hover:text-slate-600"
+                  >
+                    Atualizar
+                  </button>
+                  {userRole === 'ADMIN' && (
+                    <button
+                      onClick={() => { setShowInvite(true); setInviteError(null); }}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Convidar
+                    </button>
+                  )}
+                </div>
               </div>
 
               {usersLoading && (
@@ -917,14 +956,79 @@ const Settings: React.FC<Props> = ({
               )}
             </div>
 
-            <div className="bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 flex items-center gap-3">
-              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-              <p className="text-xs font-semibold text-amber-700">
-                Criar um novo login ainda é feito direto no Supabase (Authentication → Add user). Depois de criado, ele aparece aqui automaticamente como Recepção — só trocar o papel.
-              </p>
-            </div>
           </div>
         </div>
+      )}
+
+      {/* Modal: Convidar usuário */}
+      {showInvite && createPortal(
+        <>
+          <div className="fixed inset-0 bg-black/30 z-[60]" onClick={() => setShowInvite(false)} />
+          <div className="fixed inset-0 z-[61] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <p className="text-sm font-black text-slate-800">Convidar novo usuário</p>
+                <button onClick={() => setShowInvite(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                {inviteError && (
+                  <p className="text-xs text-rose-600 bg-rose-50 px-3 py-2 rounded-lg">{inviteError}</p>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Email</label>
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && sendInvite()}
+                    placeholder="nome@email.com"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Papel</label>
+                  <select
+                    value={inviteRole}
+                    onChange={e => setInviteRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 appearance-none"
+                  >
+                    {(Object.keys(ROLE_LABELS) as UserRole[]).map(r => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  O usuário receberá um email com link para criar a senha e acessar o sistema.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100">
+                <button
+                  onClick={() => setShowInvite(false)}
+                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={sendInvite}
+                  disabled={inviting}
+                  className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {inviting ? 'Enviando...' : 'Enviar convite'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
       )}
 
     </div>
