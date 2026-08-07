@@ -108,3 +108,35 @@
 .premium-input {
   @apply w-full px-5 py-3.5 bg-white border border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-medium placeholder:text-slate-400;
 }
+/* ─── Modal animations (SIN-41) ──────────────────────────────────────────── */
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+@keyframes modal-out {
+  from { opacity: 1; transform: scale(1)    translateY(0);   }
+  to   { opacity: 0; transform: scale(0.96) translateY(8px); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+.modal-backdrop {
+  animation: backdrop-in 180ms ease both;
+}
+
+.modal-card {
+  animation: modal-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.slide-up {
+  animation: slide-up 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}

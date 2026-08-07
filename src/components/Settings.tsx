@@ -750,9 +750,9 @@ const Settings: React.FC<Props> = ({
       {/* Modal de serviço — portal para escapar de overflow:hidden/transform dos pais */}
       {showSvcForm && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/40 z-[60]" onClick={cancelSvcForm} />
+          <div className="modal-backdrop fixed inset-0 bg-black/40 z-[60]" onClick={cancelSvcForm} />
           <div className="fixed inset-0 z-[61] flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto">
+            <div className="modal-card bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                 <h3 className="font-black text-slate-800 text-sm">
                   {editingSvc ? 'Editar Serviço' : 'Novo Serviço'}
@@ -969,9 +969,9 @@ const Settings: React.FC<Props> = ({
       {/* Modal: Convidar usuário */}
       {showInvite && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/30 z-[60]" onClick={() => setShowInvite(false)} />
+          <div className="modal-backdrop fixed inset-0 bg-black/30 z-[60]" onClick={() => setShowInvite(false)} />
           <div className="fixed inset-0 z-[61] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="modal-card bg-white rounded-2xl shadow-2xl w-full max-w-sm">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                 <p className="text-sm font-black text-slate-800">Convidar novo usuário</p>
                 <button onClick={() => setShowInvite(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">

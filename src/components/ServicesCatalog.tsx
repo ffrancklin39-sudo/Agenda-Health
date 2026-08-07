@@ -185,9 +185,9 @@ const ServicesCatalog: React.FC<Props> = ({ services, onRefresh }) => {
       {/* Modal create/edit */}
       {showForm && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowForm(false)} />
+          <div className="modal-backdrop fixed inset-0 bg-black/40 z-40" onClick={() => setShowForm(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="modal-card bg-white rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                 <h3 className="font-black text-slate-800">
                   {editingId ? 'Editar Serviço' : 'Novo Serviço'}
