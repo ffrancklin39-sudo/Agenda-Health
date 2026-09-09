@@ -205,7 +205,7 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
   ).length;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500">
 
       <div className="flex justify-between items-center">
         <div>
@@ -215,16 +215,16 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
       </div>
 
       {/* Cards mensais */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, idx) => (
-          <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex items-center space-x-5 group">
-            <div className={`p-4 rounded-xl ${stat.bg} ${stat.color} transition-transform duration-300 group-hover:scale-110`}>
-              <stat.icon size={24} />
+          <div key={idx} className="bg-white px-5 py-4 rounded-xl border border-slate-200 hover:border-slate-300 transition-colors duration-200 flex items-center gap-4">
+            <div className={`p-2.5 rounded-lg ${stat.bg} ${stat.color} shrink-0`}>
+              <stat.icon size={18} />
             </div>
-            <div>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">{stat.label}</p>
-              <p className="text-[10px] text-slate-400 mb-1">{stat.sublabel}</p>
-              <p className="text-2xl font-extrabold text-slate-900 tracking-tight">{stat.value}</p>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-slate-500 truncate">{stat.label}</p>
+              <p className="text-xl font-bold text-slate-900 tracking-tight leading-tight mt-0.5">{stat.value}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5 truncate">{stat.sublabel}</p>
             </div>
           </div>
         ))}
@@ -232,10 +232,10 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Gráfico com toggle leads / receita */}
-        <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
-          <div className="flex justify-between items-center mb-8">
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 flex flex-col">
+          <div className="flex justify-between items-center mb-6">
             <div>
-              <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
                 <BarChart3 className="text-indigo-600" size={20} />
                 {chartMode === 'leads' ? 'Evolução de Leads Captados' : 'Evolução de Receita'}
               </h3>
@@ -254,7 +254,7 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
               >Receita</button>
             </div>
           </div>
-          <div className="flex-1 flex items-end justify-between gap-2 h-48 mt-auto pt-8 border-b border-slate-100 pb-2">
+          <div className="flex-1 flex items-end justify-between gap-2 h-44 mt-auto pt-6 border-b border-slate-100 pb-2">
             {chartMode === 'leads'
               ? chartData.map((data, i) => (
                   <div key={i} className="flex flex-col items-center flex-1 group">
@@ -289,23 +289,23 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
         </div>
 
         {/* Origem */}
-        <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
-          <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2 mb-1">
-            <Target className="text-indigo-600" size={20} /> Origem dos Leads
+        <div className="bg-white p-6 rounded-xl border border-slate-200 flex flex-col">
+          <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2 mb-1">
+            <Target className="text-indigo-600" size={18} /> Origem dos Leads
           </h3>
-          <p className="text-xs text-slate-500 font-medium mb-8">De onde seus leads estão vindo</p>
-          <div className="space-y-6 mt-auto">
+          <p className="text-xs text-slate-500 mb-6">De onde seus leads estão vindo</p>
+          <div className="space-y-4 mt-auto">
             {[
               { label: 'Meta (Insta/FB)', value: sourceStats.meta, color: 'bg-blue-500' },
               { label: 'Google Ads/Orgânico', value: sourceStats.google, color: 'bg-emerald-500' },
               { label: 'Indicação / Manual', value: sourceStats.manual, color: 'bg-indigo-400' },
             ].map(src => (
               <div key={src.label}>
-                <div className="flex justify-between text-sm font-bold text-slate-700 mb-2">
+                <div className="flex justify-between text-xs text-slate-600 mb-1.5">
                   <span>{src.label}</span>
-                  <span>{src.value}</span>
+                  <span className="font-medium text-slate-800">{src.value}</span>
                 </div>
-                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                   <div
                     className={`h-full ${src.color} rounded-full`}
                     style={{ width: `${totalLeads ? (src.value / totalLeads) * 100 : 0}%` }}
@@ -319,19 +319,21 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Lembretes */}
-        <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <BellRing className={`${dueReminders.length > 0 ? 'text-amber-500 animate-pulse' : 'text-slate-400'}`} size={20} />
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200">
+          <div className="flex justify-between items-center mb-5">
+            <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <BellRing className={`${dueReminders.length > 0 ? 'text-amber-500' : 'text-slate-400'}`} size={18} />
               Lembretes Pendentes
             </h3>
-            <span className="px-3 py-1 bg-amber-50 text-amber-600 text-[10px] font-black uppercase tracking-widest rounded-full">
-              {dueReminders.length} pendentes
-            </span>
+            {dueReminders.length > 0 && (
+              <span className="px-2.5 py-0.5 bg-amber-50 text-amber-700 text-xs font-medium rounded-md border border-amber-200">
+                {dueReminders.length} pendentes
+              </span>
+            )}
           </div>
           <div className="space-y-3 max-h-[250px] overflow-y-auto custom-scrollbar pr-2">
             {dueReminders.length > 0 ? dueReminders.map(p => (
-              <div key={p.id} className="flex items-center justify-between p-4 bg-amber-50/50 border border-amber-100 rounded-xl hover:bg-amber-50 transition-colors cursor-pointer">
+              <div key={p.id} className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-100 rounded-lg hover:bg-amber-50/60 hover:border-amber-100 transition-colors cursor-pointer">
                 <div className="flex items-start gap-4">
                   <div className="mt-1 w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
                   <div>
@@ -360,31 +362,23 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
         </div>
 
         {/* Resumo do mes */}
-        <div className="bg-indigo-600 p-8 rounded-2xl shadow-lg text-white relative overflow-hidden flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -mr-24 -mt-24 blur-3xl" />
-          <div className="relative z-10">
-            <h3 className="text-lg font-bold mb-1 tracking-tight">Resumo do Mês</h3>
-            <p className="text-indigo-200 text-xs capitalize">{monthName}</p>
+        <div className="bg-[#123451] p-6 rounded-xl text-white flex flex-col justify-between">
+          <div>
+            <p className="text-[11px] font-medium text-white/50 uppercase tracking-widest mb-1">Resumo</p>
+            <h3 className="text-base font-semibold capitalize">{monthName}</h3>
           </div>
-          <div className="relative z-10 space-y-3 mt-6">
-            <div className="flex items-center justify-between bg-white/10 px-4 py-3 rounded-xl border border-white/10">
-              <span className="text-xs font-semibold text-indigo-100">Leads captados</span>
-              <span className="text-lg font-black">{leadsThisMonth.length}</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/10 px-4 py-3 rounded-xl border border-white/10">
-              <span className="text-xs font-semibold text-indigo-100">Agendamentos</span>
-              <span className="text-lg font-black">{scheduledThisMonthCount}</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/10 px-4 py-3 rounded-xl border border-white/10">
-              <span className="text-xs font-semibold text-indigo-100">Taxa de conversão</span>
-              <span className="text-lg font-black">{conversionRate}%</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/10 px-4 py-3 rounded-xl border border-white/10">
-              <span className="text-xs font-semibold text-indigo-100">Faturamento</span>
-              <span className="text-sm font-black">
-                {realRevenue !== null ? fmt(realRevenue) : '—'}
-              </span>
-            </div>
+          <div className="space-y-2 mt-6">
+            {[
+              { label: 'Leads captados', value: leadsThisMonth.length },
+              { label: 'Agendamentos', value: scheduledThisMonthCount },
+              { label: 'Conversão', value: `${conversionRate}%` },
+              { label: 'Faturamento', value: realRevenue !== null ? fmt(realRevenue) : '—' },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-between py-2.5 border-b border-white/10 last:border-0">
+                <span className="text-xs text-white/60">{row.label}</span>
+                <span className="text-sm font-semibold">{row.value}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -222,7 +222,7 @@ const Finance: React.FC<Props> = ({ patients }) => {
               { label:'Taxa', value:`${lazaro.rate}%`, cl:'text-emerald-600', bg:'bg-emerald-50 border-emerald-100' },
             ].map((s,i)=>(
               <div key={i} className={`rounded-lg p-2.5 text-center border ${s.bg}`}>
-                <p className={`text-lg font-black ${s.cl}`}>{s.value}</p>
+                <p className={`text-lg font-bold ${s.cl}`}>{s.value}</p>
                 <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400 mt-0.5">{s.label}</p>
               </div>
             ))}

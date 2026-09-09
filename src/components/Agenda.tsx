@@ -1805,7 +1805,7 @@ const Agenda: React.FC<Props> = ({
 
       {/* ── Toast ── */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 text-sm font-bold ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg animate-in slide-in-from-bottom-4 duration-300 text-sm font-medium ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
           {toast.msg}
         </div>
@@ -1814,8 +1814,7 @@ const Agenda: React.FC<Props> = ({
       {/* ── Modal: Novo Agendamento ── */}
       {showQuickAdd && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl relative flex flex-col max-h-[92vh]">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 blur-3xl opacity-50 pointer-events-none" />
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-lg relative flex flex-col max-h-[92vh]">
             {/* Header fixo */}
             <div className="relative z-10 px-8 pt-8 pb-4 shrink-0">
               <div className="flex items-center justify-between">
@@ -1836,22 +1835,22 @@ const Agenda: React.FC<Props> = ({
               <form className="space-y-5" onSubmit={handleSubmit}>
                 {/* ── Divisor de seção: agrupa data, horário e paciente ── */}
                 <div className="flex items-center gap-2.5">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 shrink-0">Quando &amp; com quem</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400 shrink-0">Quando &amp; com quem</span>
                   <div className="flex-1 h-px bg-slate-100" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Data</label>
+                    <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Data</label>
                     <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="premium-input" required />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Horário</label>
+                    <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Horário</label>
                     <input type="time" value={formTime} onChange={e => setFormTime(e.target.value)} className="premium-input" required />
                   </div>
                 </div>
                 <div className="space-y-1.5 relative" ref={searchRef}>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Paciente</label>
+                  <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Paciente</label>
                   <div className="relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                     <input type="text" placeholder="Digite o nome do paciente..."
@@ -1887,7 +1886,7 @@ const Agenda: React.FC<Props> = ({
                   )}
 
                   {showDrop && !selPatient && patientQuery.trim().length >= 1 && (
-                    <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
                       {patientSuggestions.length > 0 && patientSuggestions.map(p => (
                         <button key={p.id} type="button"
                           onMouseDown={() => { setSelPatient(p); setPatientQuery(''); setShowDrop(false); }}
@@ -1917,7 +1916,7 @@ const Agenda: React.FC<Props> = ({
                 {/* Campo telefone — aparece apenas para paciente novo */}
                 {selPatient?.id === 'NEW_FROM_AGENDA' && (
                   <div className="space-y-1.5 animate-in fade-in duration-200">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                    <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">
                       Telefone / WhatsApp *
                     </label>
                     <input
@@ -1932,12 +1931,12 @@ const Agenda: React.FC<Props> = ({
 
                 {/* ── Divisor de seção: separa "quando/quem" de "o que será feito" ── */}
                 <div className="flex items-center gap-2.5 pt-1">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 shrink-0">Atendimento</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400 shrink-0">Atendimento</span>
                   <div className="flex-1 h-px bg-slate-100" />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
+                  <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
                   <select value={formProfId} onChange={e => setFormProfId(e.target.value)} className="premium-input appearance-none">
                     {activeProfs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
@@ -1946,7 +1945,7 @@ const Agenda: React.FC<Props> = ({
                 {/* ── Procedimentos (suporta múltiplos no mesmo atendimento) ── */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between ml-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                    <label className="text-[10px] font-medium uppercase text-slate-400 tracking-widest">
                       {formProcedures.length > 1 ? 'Procedimentos' : 'Procedimento'}
                     </label>
                     <button type="button" onClick={addProcedureRow}
@@ -1998,13 +1997,13 @@ const Agenda: React.FC<Props> = ({
 
                 {/* ── Divisor de seção: separa "o que será feito" de observações/recorrência ── */}
                 <div className="flex items-center gap-2.5 pt-1">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 shrink-0">Detalhes adicionais</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400 shrink-0">Detalhes adicionais</span>
                   <div className="flex-1 h-px bg-slate-100" />
                 </div>
 
                 {/* ── Observação livre do agendamento (ex.: "Retorno PROBIOME") ── */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Observação (opcional)</label>
+                  <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Observação (opcional)</label>
                   <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
                     placeholder="Anotações livres sobre este atendimento (ex.: preferências do paciente, retorno, orientações)..."
                     className="premium-input resize-none" />
@@ -2166,7 +2165,7 @@ const Agenda: React.FC<Props> = ({
       {/* ── Modal: Editar Agendamento ── */}
       {editingApt && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-lg overflow-hidden flex flex-col max-h-[90vh]">
 
             {/* Header */}
             <div className="px-6 pt-6 pb-0 shrink-0">
@@ -2215,16 +2214,16 @@ const Agenda: React.FC<Props> = ({
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Data</label>
+                      <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Data</label>
                       <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="premium-input" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Horário</label>
+                      <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Horário</label>
                       <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className="premium-input" />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Duração</label>
+                    <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Duração</label>
                     <input type="time" value={editDuration} onChange={e => setEditDuration(e.target.value)} min="00:15" className="premium-input" />
                     {editTime && editDuration && (() => {
                       const [sh, sm] = editTime.split(':').map(Number);
@@ -2242,7 +2241,7 @@ const Agenda: React.FC<Props> = ({
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Serviço</label>
+                      <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Serviço</label>
                       <select value={editServiceId} onChange={e => {
                         setEditServiceId(e.target.value);
                         const svc = services.find(s => s.id === e.target.value);
@@ -2253,7 +2252,7 @@ const Agenda: React.FC<Props> = ({
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
+                      <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
                       <select value={editProfId} onChange={e => setEditProfId(e.target.value)} className="premium-input appearance-none">
                         <option value="">Selecione...</option>
                         {activeProfs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -2261,7 +2260,7 @@ const Agenda: React.FC<Props> = ({
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Status</label>
+                    <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Status</label>
                     <select value={editStatus} onChange={e => { setEditStatus(e.target.value); if (e.target.value !== 'cancelled') setEditCancelReason(''); }} className="premium-input appearance-none">
                       {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
@@ -2275,7 +2274,7 @@ const Agenda: React.FC<Props> = ({
                     </div>
                   )}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Observação</label>
+                    <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Observação</label>
                     <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
                       placeholder="Anotações livres sobre este atendimento (ex.: preferências do paciente, retorno, orientações)..."
                       className="premium-input resize-none" />
@@ -2410,7 +2409,7 @@ const Agenda: React.FC<Props> = ({
       {/* ── Modal: Bloquear Horário ── */}
       {showBlockModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-md">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <span>🔒</span>

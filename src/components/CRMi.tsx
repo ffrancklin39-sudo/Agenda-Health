@@ -860,22 +860,22 @@ const CRMi: React.FC<CRMiProps> = ({
         <div className="grid grid-cols-4 gap-2.5">
           <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Funil Ativo</p>
-            <p className="text-2xl font-black text-slate-800 leading-none">{kpis.active}</p>
+            <p className="text-2xl font-bold text-slate-800 leading-none">{kpis.active}</p>
             <p className="text-[10px] text-slate-400 mt-1">leads no pipeline</p>
           </div>
           <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
             <p className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-1">Agendados</p>
-            <p className="text-2xl font-black text-purple-700 leading-none">{kpis.scheduled}</p>
+            <p className="text-2xl font-bold text-purple-700 leading-none">{kpis.scheduled}</p>
             <p className="text-[10px] text-purple-400 mt-1">prontos p/ atender</p>
           </div>
           <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
             <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mb-1">Atendidos</p>
-            <p className="text-2xl font-black text-emerald-700 leading-none">{kpis.confirmed}</p>
+            <p className="text-2xl font-bold text-emerald-700 leading-none">{kpis.confirmed}</p>
             <p className="text-[10px] text-emerald-400 mt-1">conversões totais</p>
           </div>
           <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
             <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Faturado</p>
-            <p className="text-lg font-black text-indigo-700 leading-none mt-0.5">
+            <p className="text-lg font-bold text-indigo-700 leading-none mt-0.5">
               {kpis.totalConfirmedValue > 0
                 ? `R$ ${kpis.totalConfirmedValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                 : '—'}
@@ -1165,7 +1165,7 @@ const CRMi: React.FC<CRMiProps> = ({
       {/* Modal de Exclusão de Lead */}
       {showDeleteModal && deletingPatient && (
         <div className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
+          <div className="bg-white rounded-xl w-full max-w-sm shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
                 <Trash2 size={16} className="text-rose-600" />
@@ -1235,7 +1235,7 @@ const CRMi: React.FC<CRMiProps> = ({
       {/* Modal Novo Lead / Editar Lead */}
       {showAddModal && (
         <div className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
+          <div className="bg-white rounded-xl w-full max-w-sm shadow-lg p-6">
             <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
               <UserPlus className="text-indigo-600" size={18} />
               {editingPatientId ? 'Editar Informações' : 'Adicionar Novo Lead'}
@@ -1333,7 +1333,7 @@ const CRMi: React.FC<CRMiProps> = ({
       {/* Modal de Reembolso / Estorno */}
       {showRefundModal && refundData && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-xl w-full max-w-sm shadow-lg p-6 animate-in zoom-in-95 duration-200">
             <h3 className="text-base font-bold text-rose-600 mb-2 flex items-center gap-2">
               <AlarmClock size={18} /> Atenção ao Valor!
             </h3>
@@ -1373,7 +1373,7 @@ const CRMi: React.FC<CRMiProps> = ({
       {/* Modal de Lembrete */}
       {showReminderModal && selectedForReminder && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
+          <div className="bg-white rounded-xl w-full max-w-sm shadow-lg p-6">
             <h3 className="text-base font-bold text-slate-900 mb-0.5 flex items-center gap-2">
               <BellRing className="text-amber-500" size={18} />
               Lembrete de Atenção
@@ -1437,7 +1437,7 @@ const CRMi: React.FC<CRMiProps> = ({
       {/* Painel de Histórico / Timeline */}
       {showHistoryPanel && historyPatient && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh]">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-lg flex flex-col max-h-[80vh]">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">

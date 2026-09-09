@@ -35,9 +35,18 @@ CREATE TABLE IF NOT EXISTS appointment_series (
 COMMENT ON TABLE appointment_series IS 'Agrupa sessões recorrentes de um mesmo pacote/tratamento (ex: 10 sessões de fisioterapia). Cada sessão individual fica em appointments com series_id apontando para cá.';
 
 -- FK de appointments → appointment_series (adicionada após criação da tabela)
-ALTER TABLE appointments
-  ADD CONSTRAINT IF NOT EXISTS fk_appointments_series
-  FOREIGN KEY (series_id) REFERENCES appointment_series(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'fk_appointments_series'
+      AND table_name = 'appointments'
+  ) THEN
+    ALTER TABLE appointments
+      ADD CONSTRAINT fk_appointments_series
+      FOREIGN KEY (series_id) REFERENCES appointment_series(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- Índices
 CREATE INDEX IF NOT EXISTS idx_appointment_series_patient ON appointment_series(patient_id);
