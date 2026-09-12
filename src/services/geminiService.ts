@@ -1,28 +1,9 @@
 // geminiService.ts
-// Camada 2 do CRM — Inteligência conversacional (Gemini)
-// Responsável por: resumo automático do histórico do paciente/lead
-// e análise de interesse/urgência ("lead quente").
-//
-// Mantém o cache no banco (colunas ai_summary / lead_temperature em
-// `patients`, ver sql/crm_ai_layer.sql) — este serviço só é chamado
-// quando o usuário pede explicitamente para gerar/atualizar a análise.
+// Camada de IA do CRM — chama a Edge Function 'gemini-analyze' no Supabase.
+// A chave do Gemini fica exclusivamente no servidor (Supabase Secret).
 
-import { GoogleGenAI, Type } from '@google/genai';
+import { supabase } from './supabaseClient';
 import { Patient, PatientHistory } from '../types';
-
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-const MODEL = 'gemini-2.5-flash';
-
-let client: GoogleGenAI | null = null;
-function getClient(): GoogleGenAI {
-  if (!API_KEY) {
-    throw new Error('VITE_GEMINI_API_KEY não configurada em .env.local');
-  }
-  if (!client) {
-    client = new GoogleGenAI({ apiKey: API_KEY });
-  }
-  return client;
-}
 
 export interface PatientAIAnalysis {
   summary: string;
@@ -32,104 +13,49 @@ export interface PatientAIAnalysis {
   messageDraft: string;
 }
 
-export const isGeminiConfigured = (): boolean => !!API_KEY;
-
-/** Monta um texto compacto com os dados relevantes do lead + timeline para o prompt. */
-function buildContext(patient: Patient, history: PatientHistory[]): string {
-  const days = patient.created_at
-    ? Math.floor((Date.now() - new Date(patient.created_at).getTime()) / (1000 * 60 * 60 * 24))
-    : null;
-
-  const lines: string[] = [];
-  lines.push(`Nome: ${patient.name || 'Sem nome'}`);
-  lines.push(`Status atual no funil: ${patient.status || 'lead'}`);
-  if (patient.source) lines.push(`Origem do lead: ${patient.source}`);
-  if (days !== null) lines.push(`Dias desde a criação do lead: ${days}`);
-  if (patient.price) lines.push(`Valor do procedimento de interesse: R$ ${patient.price}`);
-  if (patient.observation) lines.push(`Observações cadastradas: ${patient.observation}`);
-  if (patient.reminderDate) lines.push(`Possui lembrete agendado para: ${patient.reminderDate}`);
-
-  if (history.length === 0) {
-    lines.push('\nNenhum evento registrado no histórico ainda.');
-  } else {
-    lines.push('\nHistórico de interações (mais recente primeiro):');
-    history.slice(0, 25).forEach(ev => {
-      const when = ev.date || ev.created_at;
-      const whenStr = when ? new Date(when).toLocaleDateString('pt-BR') : '';
-      lines.push(`- [${whenStr}] (${ev.event_type}) ${ev.notes || ev.description || ''}`);
-    });
-  }
-  return lines.join('\n');
-}
+/** Sempre retorna true — a disponibilidade real é verificada pela Edge Function */
+export const isGeminiConfigured = (): boolean => true;
 
 /**
- * Gera o resumo + classificação de temperatura do lead via Gemini.
- * Lança erro se a chave não estiver configurada ou a chamada falhar —
- * quem chama deve tratar e mostrar feedback ao usuário.
+ * Gera resumo + classificação de temperatura via Edge Function segura.
+ * Lança erro se a chamada falhar — quem chama deve tratar e mostrar feedback.
  */
 export async function analyzePatient(
   patient: Patient,
   history: PatientHistory[]
 ): Promise<PatientAIAnalysis> {
-  const ai = getClient();
-  const context = buildContext(patient, history);
-
-  const prompt = `Você é um assistente de CRM para uma clínica de saúde estética/integrada. Analise o lead abaixo e responda em português do Brasil, de forma objetiva e profissional.
-
-${context}
-
-Tarefas:
-1. Escreva um resumo curto (2 a 4 frases) do histórico e situação atual deste lead/paciente, útil para a recepção entender rapidamente o contexto sem reler tudo.
-2. Classifique a temperatura do lead como "quente" (alto interesse/urgência, agir agora), "morno" (interesse moderado, acompanhar) ou "frio" (baixo engajamento ou parado há muito tempo).
-3. Explique em uma frase curta o motivo da classificação.
-4. Sugira a próxima melhor ação para a recepção em uma frase curta e prática (ex: "Ligar hoje oferecendo um horário", "Aguardar resposta, já foi contatado recentemente", "Mover para reativação — parado há muito tempo"). Considere o estágio atual no funil e o tempo desde o último contato.
-5. Escreva um rascunho de mensagem de WhatsApp (2 a 3 frases, tom acolhedor e objetivo, sem emojis em excesso) que a recepção pode revisar e enviar para este lead. Esse rascunho é APENAS para revisão humana — nunca será enviado automaticamente, então não inclua instruções de envio, apenas o texto da mensagem em si.`;
-
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          summary: { type: Type.STRING },
-          temperature: { type: Type.STRING, enum: ['quente', 'morno', 'frio'] },
-          temperatureReason: { type: Type.STRING },
-          nextAction: { type: Type.STRING },
-          messageDraft: { type: Type.STRING },
-        },
-        required: ['summary', 'temperature', 'temperatureReason', 'nextAction', 'messageDraft'],
-      },
-    },
+  const { data, error } = await supabase.functions.invoke('gemini-analyze', {
+    body: { patient, history },
   });
 
-  const text = response.text;
-  if (!text) throw new Error('Resposta vazia do Gemini');
+  if (error) {
+    throw new Error(error.message || 'Erro ao chamar análise de IA');
+  }
 
-  const parsed = JSON.parse(text);
-  const temperature = ['quente', 'morno', 'frio'].includes(parsed.temperature)
-    ? parsed.temperature
-    : 'morno';
+  if (data?.error) {
+    throw new Error(data.error);
+  }
 
+  const validTemps = ['quente', 'morno', 'frio'];
   return {
-    summary: String(parsed.summary || '').trim(),
-    temperature,
-    temperatureReason: String(parsed.temperatureReason || '').trim(),
-    nextAction: String(parsed.nextAction || '').trim(),
-    messageDraft: String(parsed.messageDraft || '').trim(),
+    summary:           String(data.summary           || '').trim(),
+    temperature:       validTemps.includes(data.temperature) ? data.temperature : 'morno',
+    temperatureReason: String(data.temperatureReason || '').trim(),
+    nextAction:        String(data.nextAction        || '').trim(),
+    messageDraft:      String(data.messageDraft      || '').trim(),
   };
 }
 
 /**
- * Gera um texto livre usando o Gemini — uso genérico (ex: descrição de
- * tratamento para contratos). Retorna a string gerada ou lança erro.
+ * Geração de texto livre — mantida por compatibilidade com PatientProfile.
+ * Chama a Edge Function com um prompt direto (sem análise estruturada).
  */
 export async function generateTextContent(prompt: string): Promise<string> {
-  const ai = getClient();
-  const result = await ai.models.generateContent({
-    model: MODEL,
-    contents: prompt,
+  const { data, error } = await supabase.functions.invoke('gemini-analyze', {
+    body: { freePrompt: prompt },
   });
-  return result.text?.trim() ?? '';
+
+  if (error) throw new Error(error.message || 'Erro ao gerar texto');
+  if (data?.error) throw new Error(data.error);
+  return String(data?.text || '').trim();
 }
