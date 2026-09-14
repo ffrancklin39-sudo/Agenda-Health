@@ -1,0 +1,116 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── 1. Scan de segredos no código-fonte e no bundle ───────────────────────
+  secret-scan:
+    name: 🔍 Scan de segredos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Build do projeto
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Verificar VITE_ sensíveis no código-fonte
+        run: |
+          echo "Verificando variáveis VITE_ sensíveis no source..."
+
+          # VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY são públicas por design do Supabase.
+          # Qualquer outra variável VITE_ em import.meta.env é suspeita.
+          SUSPICIOUS=$(grep -rn "import\.meta\.env\.VITE_" src/ \
+            --include="*.ts" --include="*.tsx" | \
+            grep -v "VITE_SUPABASE_URL\|VITE_SUPABASE_ANON_KEY" || true)
+
+          if [ -n "$SUSPICIOUS" ]; then
+            echo "FALHA: Variáveis VITE_ sensíveis encontradas no source (serão expostas no bundle):"
+            echo "$SUSPICIOUS"
+            exit 1
+          else
+            echo "OK: Nenhuma variável VITE_ sensível no source."
+          fi
+
+      - name: Escanear bundle por padrões de chaves
+        run: |
+          echo "Escaneando bundle em dist/..."
+
+          FOUND=0
+
+          # Padrões que NUNCA devem aparecer no bundle público
+          declare -A PATTERNS
+          PATTERNS["Google API key (AIza)"]='AIza[0-9A-Za-z_-]{35}'
+          PATTERNS["Supabase service_role"]='service_role'
+          PATTERNS["OpenAI key"]='sk-[a-zA-Z0-9]{48}'
+          PATTERNS["Anthropic key"]='sk-ant-[a-zA-Z0-9]+'
+          PATTERNS["Resend key"]='re_[a-zA-Z0-9]{32}'
+          PATTERNS["GEMINI_API_KEY literal"]='GEMINI_API_KEY=[A-Za-z0-9_-]+'
+
+          for label in "${!PATTERNS[@]}"; do
+            pattern="${PATTERNS[$label]}"
+            match=$(grep -rE "$pattern" dist/ --include="*.js" -l 2>/dev/null || true)
+            if [ -n "$match" ]; then
+              echo "FALHA [$label]: padrão encontrado no bundle: $match"
+              FOUND=1
+            fi
+          done
+
+          if [ $FOUND -eq 0 ]; then
+            echo "OK: Nenhum segredo encontrado no bundle."
+          else
+            exit 1
+          fi
+
+  # ── 2. Verificação de headers HTTP em produção ────────────────────────────
+  headers-check:
+    name: 🛡️ Headers HTTP
+    runs-on: ubuntu-latest
+    needs: secret-scan
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checar headers de segurança em produção
+        run: |
+          URL="https://agenda-health.vercel.app"
+          echo "Verificando headers em $URL..."
+
+          MISSING=0
+
+          check() {
+            local name=$1
+            local val
+            val=$(curl -sI "$URL" | grep -i "^$name:" | head -1 | tr -d '\r')
+            if [ -n "$val" ]; then
+              echo "  OK  $val"
+            else
+              echo "  AUSENTE  $name"
+              MISSING=1
+            fi
+          }
+
+          check "x-content-type-options"
+          check "x-frame-options"
+          check "strict-transport-security"
+          check "referrer-policy"
+          check "permissions-policy"
+
+          if [ $MISSING -eq 1 ]; then
+            echo "Alguns headers de segurança estão ausentes. Verifique vercel.json."
+            # Aviso sem bloquear o merge (headers podem demorar a propagar)
+          else
+            echo "OK: Todos os headers de segurança presentes."
+          fi
