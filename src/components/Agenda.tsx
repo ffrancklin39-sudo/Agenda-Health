@@ -2310,23 +2310,25 @@ const Agenda: React.FC<Props> = ({
                       <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className="premium-input" />
                     </div>
                   </div>
-                  {!editGroupSiblings && <div className="space-y-1.5">
-                    <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Duração</label>
-                    <input type="time" value={editDuration} onChange={e => setEditDuration(e.target.value)} min="00:15" className="premium-input" />
-                    {editTime && editDuration && (() => {
-                      const [sh, sm] = editTime.split(':').map(Number);
-                      const [dh, dm] = editDuration.split(':').map(Number);
-                      const totalMin = (sh||0)*60 + (sm||0) + (dh||0)*60 + (dm||0);
-                      const endH = Math.floor(totalMin / 60) % 24; const endM = totalMin % 60;
-                      const durLabel = (dh||0) > 0 ? ((dm||0) > 0 ? `${dh}h${String(dm).padStart(2,'0')}min` : `${dh}h`) : `${dm}min`;
-                      return (
-                        <p className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 mt-1">
-                          <Clock className="w-3.5 h-3.5" />
-                          {durLabel} · Término aprox. às {String(endH).padStart(2,'0')}:{String(endM).padStart(2,'0')}
-                        </p>
-                      );
-                    })()}
-                  </div>
+                  {!editGroupSiblings && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Duração</label>
+                      <input type="time" value={editDuration} onChange={e => setEditDuration(e.target.value)} min="00:15" className="premium-input" />
+                      {editTime && editDuration && (() => {
+                        const [sh, sm] = editTime.split(':').map(Number);
+                        const [dh, dm] = editDuration.split(':').map(Number);
+                        const totalMin = (sh||0)*60 + (sm||0) + (dh||0)*60 + (dm||0);
+                        const endH = Math.floor(totalMin / 60) % 24; const endM = totalMin % 60;
+                        const durLabel = (dh||0) > 0 ? ((dm||0) > 0 ? `${dh}h${String(dm).padStart(2,'0')}min` : `${dh}h`) : `${dm}min`;
+                        return (
+                          <p className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 mt-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            {durLabel} · Término aprox. às {String(endH).padStart(2,'0')}:{String(endM).padStart(2,'0')}
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-4">
                     {!editGroupSiblings && (
                       <div className="space-y-1.5">
