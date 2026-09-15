@@ -1000,22 +1000,29 @@ const Agenda: React.FC<Props> = ({
           const deltaY  = ev.clientY - startY;
           const deltaM  = Math.round(deltaY / pxPerMin / SNAP_MIN) * SNAP_MIN;
           const newDur  = Math.max(15, origDur + deltaM);
+          // Optimistic: cola na hora, sem esperar o round-trip
+          setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, duration_minutes: newDur } : a));
           const { error } = await supabase.from('appointments').update({ duration_minutes: newDur }).eq('id', apt.id);
           if (error) throw error;
-          await fetchAppointments();
+          // realtime subscription sincroniza automaticamente — fetchAppointments() não é necessário
           setToast({ type: 'success', msg: 'Duração atualizada!' });
         }
         if (type === 'move') {
-          const deltaY  = ev.clientY - startY;
-          const deltaM  = Math.round(deltaY / pxPerMin / SNAP_MIN) * SNAP_MIN;
-          const newMins = Math.max(START_HOUR * 60, Math.min((END_HOUR - 1) * 60, origMins + deltaM));
-          const { error } = await supabase.from('appointments').update({ date_time: `${preview.date}T${minToTime(newMins)}:00` }).eq('id', apt.id);
+          const deltaY      = ev.clientY - startY;
+          const deltaM      = Math.round(deltaY / pxPerMin / SNAP_MIN) * SNAP_MIN;
+          const newMins     = Math.max(START_HOUR * 60, Math.min((END_HOUR - 1) * 60, origMins + deltaM));
+          const newDateTime = `${preview.date}T${minToTime(newMins)}:00`;
+          // Optimistic: cola na hora, sem esperar o round-trip
+          setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, date_time: newDateTime } : a));
+          const { error } = await supabase.from('appointments').update({ date_time: newDateTime }).eq('id', apt.id);
           if (error) throw error;
-          await fetchAppointments();
+          // realtime subscription sincroniza automaticamente — fetchAppointments() não é necessário
           setToast({ type: 'success', msg: 'Agendamento movido!' });
         }
       } catch (err: any) {
-        setToast({ type: 'error', msg: `Erro: ${err?.message}` });
+        // Em caso de erro, reverte para a posição original
+        setAppointments(prev => prev.map(a => a.id === apt.id ? apt : a));
+        setToast({ type: 'error', msg: `Erro ao mover: ${err?.message}` });
       }
     };
 
