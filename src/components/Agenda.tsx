@@ -424,6 +424,7 @@ const Agenda: React.FC<Props> = ({
 
   // ── Edit appointment modal ──
   const [editingApt, setEditingApt]       = useState<Appointment | null>(null);
+  const [editGroupSiblings, setEditGroupSiblings] = useState<Appointment[] | null>(null);
   const [editTab, setEditTab]             = useState<EditTab>('agendamento');
   const [editDate, setEditDate]           = useState('');
   const [editTime, setEditTime]           = useState('');
@@ -529,6 +530,9 @@ const Agenda: React.FC<Props> = ({
   const openEdit = (apt: Appointment) => {
     const parsed  = parseAptDate(apt.date_time);
     const durMin  = apt.duration_minutes || 60;
+    // Detecta sessão com múltiplos procedimentos (card virtual com __groupSiblings)
+    const siblings = (apt as any).__groupSiblings as Appointment[] | undefined;
+    setEditGroupSiblings(siblings && siblings.length > 1 ? siblings : null);
     setEditingApt(apt);
     setEditTab('agendamento');
     setEditDate(parsed.date || toDateStr(new Date()));
@@ -584,6 +588,38 @@ const Agenda: React.FC<Props> = ({
       const cancelPrefix = editStatus === 'cancelled' && editCancelReason.trim()
         ? `[Motivo: ${editCancelReason.trim()}] `
         : '';
+
+      // ── Sessão com múltiplos procedimentos (group_id) ──
+      if (editGroupSiblings && editGroupSiblings.length > 1 && editingApt.group_id) {
+        const firstOrig    = parseAptDate(editGroupSiblings[0].date_time);
+        const firstOrigMin = firstOrig.hours * 60 + firstOrig.minutes;
+        const [nh, nm]     = editTime.split(':').map(Number);
+        const newFirstMin  = (nh || 0) * 60 + (nm || 0);
+        const delta        = newFirstMin - firstOrigMin; // minutos a deslocar toda a sessão
+
+        for (const sib of editGroupSiblings) {
+          const orig    = parseAptDate(sib.date_time);
+          const origMin = orig.hours * 60 + orig.minutes;
+          const newMin  = origMin + delta;
+          const newH    = Math.floor(newMin / 60) % 24;
+          const newM    = newMin % 60;
+          const newDateTime = `${editDate}T${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}:00`;
+          const sibUpdates: Record<string, any> = {
+            date_time: newDateTime,
+            status:    editStatus,
+            notes:     (cancelPrefix + (editNotes.trim() || '')).trim() || null,
+          };
+          if (editProfId) sibUpdates.professional_id = editProfId;
+          const { error } = await supabase.from('appointments').update(sibUpdates).eq('id', sib.id);
+          if (error) throw error;
+        }
+        setToast({ type: 'success', msg: `Sessão com ${editGroupSiblings.length} procedimentos atualizada!` });
+        await fetchAppointments();
+        setEditingApt(null);
+        setEditGroupSiblings(null);
+        return;
+      }
+
       const updates: Record<string, any> = {
         date_time:        `${editDate}T${editTime}:00`,
         duration_minutes: dur,
@@ -625,6 +661,27 @@ const Agenda: React.FC<Props> = ({
   const handleDeleteApt = async (deleteSeries = false) => {
     if (!editingApt) return;
     const patName = patients.find(p => p.id === editingApt.patient_id)?.name || 'paciente';
+
+    // ── Sessão com múltiplos procedimentos: exclui toda a sessão pelo group_id ──
+    if (editGroupSiblings && editGroupSiblings.length > 1 && editingApt.group_id) {
+      const msg = `Remover a sessão completa de ${patName} (${editGroupSiblings.length} procedimentos)? Esta ação não pode ser desfeita.`;
+      if (!window.confirm(msg)) return;
+      setSaving(true);
+      try {
+        const { error } = await supabase.from('appointments').delete().eq('group_id', editingApt.group_id);
+        if (error) throw error;
+        setToast({ type: 'success', msg: `Sessão de ${editGroupSiblings.length} procedimentos removida.` });
+        await fetchAppointments();
+        setEditingApt(null);
+        setEditGroupSiblings(null);
+      } catch (err: any) {
+        setToast({ type: 'error', msg: `Erro: ${err?.message}` });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const msg = deleteSeries
       ? `Remover TODAS as sessões do pacote de ${patName}? Esta ação não pode ser desfeita.`
       : `Remover apenas este agendamento de ${patName}?`;
@@ -2182,7 +2239,7 @@ const Agenda: React.FC<Props> = ({
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setEditingApt(null)} className="w-9 h-9 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-all">
+                <button onClick={() => { setEditingApt(null); setEditGroupSiblings(null); }} className="w-9 h-9 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-all">
                   <X className="w-4 h-4 text-slate-400" />
                 </button>
               </div>
@@ -2212,6 +2269,37 @@ const Agenda: React.FC<Props> = ({
               {/* ── Tab: Agendamento ── */}
               {editTab === 'agendamento' && (
                 <div className="space-y-4">
+
+                  {/* Painel de sessão com múltiplos procedimentos */}
+                  {editGroupSiblings && editGroupSiblings.length > 1 && (
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3.5 space-y-2.5">
+                      <p className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-1.5">
+                        <span>📋</span>
+                        Sessão com {editGroupSiblings.length} procedimentos
+                      </p>
+                      <div className="space-y-1.5">
+                        {editGroupSiblings.map((sib, i) => {
+                          const svc    = services.find(s => s.id === sib.service_id);
+                          const orig   = parseAptDate(sib.date_time);
+                          const durMin = sib.duration_minutes || 60;
+                          const dh = Math.floor(durMin / 60);
+                          const dm = durMin % 60;
+                          const durLabel = dh > 0 ? (dm > 0 ? `${dh}h${String(dm).padStart(2,'0')}min` : `${dh}h`) : `${dm}min`;
+                          return (
+                            <div key={sib.id} className="flex items-center gap-2 text-xs text-slate-700">
+                              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold shrink-0">{i + 1}</span>
+                              <span className="font-medium flex-1 truncate">{svc?.name || 'Procedimento'}</span>
+                              <span className="text-slate-400 text-[11px] shrink-0">
+                                {String(orig.hours).padStart(2,'0')}:{String(orig.minutes).padStart(2,'0')} · {durLabel}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">Alterar horário reposiciona toda a sessão mantendo os intervalos.</p>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Data</label>
@@ -2222,7 +2310,7 @@ const Agenda: React.FC<Props> = ({
                       <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className="premium-input" />
                     </div>
                   </div>
-                  <div className="space-y-1.5">
+                  {!editGroupSiblings && <div className="space-y-1.5">
                     <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Duração</label>
                     <input type="time" value={editDuration} onChange={e => setEditDuration(e.target.value)} min="00:15" className="premium-input" />
                     {editTime && editDuration && (() => {
@@ -2240,18 +2328,20 @@ const Agenda: React.FC<Props> = ({
                     })()}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Serviço</label>
-                      <select value={editServiceId} onChange={e => {
-                        setEditServiceId(e.target.value);
-                        const svc = services.find(s => s.id === e.target.value);
-                        if (svc) { const h = Math.floor(svc.duration / 60); const m = svc.duration % 60; setEditDuration(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`); }
-                      }} className="premium-input appearance-none">
-                        <option value="">Selecione...</option>
-                        {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
+                    {!editGroupSiblings && (
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Serviço</label>
+                        <select value={editServiceId} onChange={e => {
+                          setEditServiceId(e.target.value);
+                          const svc = services.find(s => s.id === e.target.value);
+                          if (svc) { const h = Math.floor(svc.duration / 60); const m = svc.duration % 60; setEditDuration(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`); }
+                        }} className="premium-input appearance-none">
+                          <option value="">Selecione...</option>
+                          {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <div className={`space-y-1.5 ${editGroupSiblings ? 'col-span-2' : ''}`}>
                       <label className="text-[10px] font-medium uppercase text-slate-400 ml-1 tracking-widest">Profissional</label>
                       <select value={editProfId} onChange={e => setEditProfId(e.target.value)} className="premium-input appearance-none">
                         <option value="">Selecione...</option>
@@ -2377,8 +2467,8 @@ const Agenda: React.FC<Props> = ({
 
             {/* Footer actions */}
             <div className="px-6 pb-6 pt-4 border-t border-slate-100 shrink-0 space-y-2">
-              {/* Indicador de série */}
-              {editingApt?.series_id && (
+              {/* Indicador de série (recorrência) */}
+              {editingApt?.series_id && !editGroupSiblings && (
                 <div className="flex items-center gap-2 text-[11px] text-indigo-600 bg-indigo-50 px-3 py-2 rounded-xl">
                   <span>📦</span>
                   <span>Sessão {editingApt.session_number ? `${editingApt.session_number} do` : 'de um'} pacote</span>
@@ -2391,9 +2481,9 @@ const Agenda: React.FC<Props> = ({
               <div className="flex gap-2.5">
                 <button onClick={() => handleDeleteApt(false)} disabled={saving}
                   className="px-4 py-2.5 bg-rose-50 text-rose-600 text-sm font-medium rounded-xl hover:bg-rose-100 transition-colors disabled:opacity-50">
-                  Excluir
+                  {editGroupSiblings ? 'Excluir sessão' : 'Excluir'}
                 </button>
-                <button onClick={() => setEditingApt(null)}
+                <button onClick={() => { setEditingApt(null); setEditGroupSiblings(null); }}
                   className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors">
                   Cancelar
                 </button>
