@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock, ChevronLeft, ChevronRight, ChevronDown, Calendar as CalIcon, Plus, X, Check,
   Search, CheckCircle2, AlertCircle, Loader2, User, FileText, Phone,
-  Activity, XCircle, RefreshCcw, UserX, CalendarClock, CheckCheck,
+  Activity, XCircle, RefreshCcw, UserX, CalendarClock, CheckCheck, Pencil,
 } from 'lucide-react';
 import { Patient, Professional, ClinicService, Appointment } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -17,7 +17,7 @@ interface Props {
   refreshTrigger?: number;
 }
 
-type ViewType = 'diario' | 'semanal' | 'mensal';
+type ViewType = 'diario' | 'semanal' | 'mensal' | 'confirmacao';
 type EditTab  = 'agendamento' | 'ficha' | 'historico';
 
 const STATUS_CONFIG = {
@@ -894,9 +894,10 @@ const Agenda: React.FC<Props> = ({
   // ── Navigation ──
   const navigate = (dir: 1 | -1) => {
     const d = new Date(currentDate);
-    if (view === 'diario')  d.setDate(d.getDate() + dir);
-    if (view === 'semanal') d.setDate(d.getDate() + dir * 7);
-    if (view === 'mensal')  d.setMonth(d.getMonth() + dir);
+    if (view === 'diario')       d.setDate(d.getDate() + dir);
+    if (view === 'semanal')      d.setDate(d.getDate() + dir * 7);
+    if (view === 'mensal')       d.setMonth(d.getMonth() + dir);
+    if (view === 'confirmacao')  d.setDate(d.getDate() + dir * 7);
     setCurrentDate(d);
     setMiniCalDate(d);
     // Re-busca se navegou para fora da janela carregada
@@ -906,12 +907,17 @@ const Agenda: React.FC<Props> = ({
   const goToday = () => { setCurrentDate(new Date()); setMiniCalDate(new Date()); };
 
   const periodLabel = () => {
+    if (view === 'confirmacao') {
+      const from = new Date(currentDate);
+      const to   = new Date(currentDate); to.setDate(to.getDate() + 6);
+      return `Confirmação · ${from.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} – ${to.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    }
     if (view === 'diario')
       return currentDate.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
     if (view === 'semanal') {
       const mon = getMonday(new Date(currentDate));
-      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-      return `${mon.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} – ${sun.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+      const sat = new Date(mon); sat.setDate(mon.getDate() + 5);
+      return `${mon.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} – ${sat.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}`;
     }
     return currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   };
@@ -1512,7 +1518,8 @@ const Agenda: React.FC<Props> = ({
   // ─────────────────────────── Weekly View ─────────────────────────────────
   const renderWeekly = () => {
     const monday   = getMonday(new Date(currentDate));
-    const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
+    // 6 dias: Seg → Sáb (domingo excluído — clínica não atende)
+    const weekDays = Array.from({ length: 6 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
 
     return (
       <div className="flex flex-col flex-1 overflow-hidden">
@@ -1740,6 +1747,189 @@ const Agenda: React.FC<Props> = ({
   const editingPatient = editingApt ? patients.find(p => p.id === editingApt.patient_id) ?? null : null;
   const epName = editingPatient?.name || 'Paciente';
 
+  // ─────────────────────────── Confirmação View ────────────────────────────
+  const renderConfirmacao = () => {
+    const from = new Date(currentDate); from.setHours(0, 0, 0, 0);
+    const to   = new Date(from);        to.setDate(to.getDate() + 6); to.setHours(23, 59, 59, 999);
+
+    const relevant = appointments.filter(a => {
+      if (!a.date_time) return false;
+      const d = new Date(a.date_time);
+      return d >= from && d <= to && a.status !== 'cancelled' && a.status !== 'completed' && a.status !== 'no_show';
+    });
+
+    const visibleApts = selectedProf === 'all' ? relevant : relevant.filter(a => a.professional_id === selectedProf);
+    const confirmedCt = visibleApts.filter(a => a.status === 'confirmed').length;
+    const total       = visibleApts.length;
+    const pct         = total > 0 ? Math.round((confirmedCt / total) * 100) : 0;
+
+    const profIds = [...new Set(visibleApts.map(a => a.professional_id || 'none'))];
+
+    const statusBadge: Record<string, string> = {
+      scheduled:   'bg-slate-100 text-slate-500',
+      confirmed:   'bg-emerald-50 text-emerald-700',
+      in_progress: 'bg-blue-50 text-blue-700',
+      rescheduled: 'bg-amber-50 text-amber-700',
+    };
+    const statusNames: Record<string, string> = {
+      scheduled:   'Não confirmado',
+      confirmed:   'Confirmado',
+      in_progress: 'Em atendimento',
+      rescheduled: 'Remarcado',
+    };
+
+    const confirmApt = async (apt: Appointment) => {
+      setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, status: 'confirmed' } : a));
+      await supabase.from('appointments').update({ status: 'confirmed' }).eq('id', apt.id);
+    };
+
+    return (
+      <div className="flex flex-col flex-1 overflow-hidden">
+        {/* ── Stats ── */}
+        <div className="px-6 py-4 border-b border-slate-100 shrink-0 space-y-3">
+          <div className="flex items-center gap-8">
+            <div>
+              <p className="text-[10px] font-medium uppercase text-slate-400 tracking-wide">A confirmar</p>
+              <p className="text-2xl font-bold text-slate-800 leading-tight">{total - confirmedCt}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-medium uppercase text-slate-400 tracking-wide">Confirmados</p>
+              <p className="text-2xl font-bold text-emerald-600 leading-tight">{confirmedCt}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-medium uppercase text-slate-400 tracking-wide">Total</p>
+              <p className="text-2xl font-bold text-slate-400 leading-tight">{total}</p>
+            </div>
+          </div>
+          {total > 0 && (
+            <div className="space-y-1 max-w-sm">
+              <p className="text-[11px] font-semibold text-slate-600">{pct}% confirmada</p>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── List ── */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {total === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <CalIcon className="w-10 h-10 mb-3 text-slate-200" />
+              <p className="font-semibold text-sm">Nenhum agendamento no período</p>
+              <p className="text-xs mt-1">Use as setas para navegar para outra semana</p>
+            </div>
+          ) : (
+            <div>
+              {/* Table header */}
+              <div className="grid grid-cols-[90px_1fr_140px_100px_auto] gap-3 px-6 py-2 border-b border-slate-100 bg-slate-50/60 shrink-0">
+                <span className="text-[10px] font-semibold uppercase text-slate-400 tracking-wide">Data / Hora</span>
+                <span className="text-[10px] font-semibold uppercase text-slate-400 tracking-wide">Paciente</span>
+                <span className="text-[10px] font-semibold uppercase text-slate-400 tracking-wide">Procedimento</span>
+                <span className="text-[10px] font-semibold uppercase text-slate-400 tracking-wide">Status</span>
+                <span className="text-[10px] font-semibold uppercase text-slate-400 tracking-wide">Ação</span>
+              </div>
+
+              {profIds.map(profId => {
+                const prof     = professionals.find(p => p.id === profId);
+                const profApts = visibleApts
+                  .filter(a => (a.professional_id || 'none') === profId)
+                  .sort((a, b) => (a.date_time || '').localeCompare(b.date_time || ''));
+                const colors   = getProfColor(prof?.color || 'blue');
+
+                return (
+                  <div key={profId}>
+                    {/* Professional separator */}
+                    <div className="flex items-center gap-2 px-6 py-2.5 bg-slate-50 border-b border-slate-100">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: colors.border }} />
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                        {prof?.name || 'Sem profissional'}
+                      </span>
+                      <span className="ml-1 text-[10px] text-slate-400">({profApts.length})</span>
+                    </div>
+
+                    {/* Rows */}
+                    {profApts.map(apt => {
+                      const patient   = patients.find(p => p.id === apt.patient_id);
+                      const patName   = (apt as any).patient_name || patient?.name || 'Paciente';
+                      const phone     = patient?.phone?.replace(/\D/g, '') || null;
+                      const svc       = services.find(s => s.id === apt.service_id);
+                      const parsed    = parseAptDate(apt.date_time);
+                      const d         = apt.date_time ? new Date(apt.date_time) : null;
+                      const isConf    = apt.status === 'confirmed';
+                      const badge     = statusBadge[apt.status] ?? 'bg-slate-100 text-slate-500';
+                      const sName     = statusNames[apt.status] ?? apt.status;
+
+                      return (
+                        <div key={apt.id}
+                          className={`grid grid-cols-[90px_1fr_140px_100px_auto] gap-3 items-center px-6 py-3 border-b border-slate-50 hover:bg-slate-50/60 transition-colors ${isConf ? 'opacity-55' : ''}`}
+                        >
+                          {/* Date/time */}
+                          <div>
+                            {d && (
+                              <>
+                                <p className="text-xs font-bold text-slate-700">{d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p>
+                                <p className="text-[11px] text-slate-400">{String(parsed.hours).padStart(2,'0')}:{String(parsed.minutes).padStart(2,'0')}</p>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Patient + phone */}
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{patName}</p>
+                            {phone ? (
+                              <a href={`https://wa.me/55${phone}`} target="_blank" rel="noopener noreferrer"
+                                className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 w-fit"
+                                onClick={e => e.stopPropagation()}>
+                                <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413z"/>
+                                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.862L0 24l6.338-1.509A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.806 9.806 0 01-5.001-1.373l-.36-.213-3.763.896.958-3.664-.234-.374A9.807 9.807 0 012.182 12C2.182 6.577 6.577 2.182 12 2.182c5.422 0 9.818 4.395 9.818 9.818 0 5.422-4.396 9.818-9.818 9.818z"/>
+                                </svg>
+                                {patient?.phone}
+                              </a>
+                            ) : (
+                              <span className="text-[11px] text-slate-300">Sem telefone</span>
+                            )}
+                          </div>
+
+                          {/* Service */}
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-600 truncate">{svc?.name || '—'}</p>
+                          </div>
+
+                          {/* Status badge */}
+                          <div>
+                            <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${badge}`}>{sName}</span>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-1.5">
+                            {!isConf && (
+                              <button onClick={() => confirmApt(apt)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 text-[11px] font-semibold rounded-lg hover:bg-emerald-100 transition-colors whitespace-nowrap">
+                                <Check className="w-3 h-3" />
+                                Confirmar
+                              </button>
+                            )}
+                            <button onClick={() => openEdit(apt)}
+                              className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="Editar">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full">
 
@@ -1848,6 +2038,16 @@ const Agenda: React.FC<Props> = ({
               </button>
             ))}
           </div>
+          {/* Botão de confirmação — separado do grupo Dia/Semana/Mês */}
+          <button onClick={() => setView('confirmacao')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-xl border transition-all ${
+              view === 'confirmacao'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-900/20'
+                : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50'
+            }`}>
+            <CheckCheck className="w-3.5 h-3.5" />
+            Confirmação
+          </button>
           <button onClick={goToday} className="px-4 py-1.5 text-[11px] font-bold border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all">
             Hoje
           </button>
@@ -1862,9 +2062,10 @@ const Agenda: React.FC<Props> = ({
           </div>
         </div>
 
-        {view === 'diario'  && renderDaily()}
-        {view === 'semanal' && renderWeekly()}
-        {view === 'mensal'  && renderMonthly()}
+        {view === 'diario'       && renderDaily()}
+        {view === 'semanal'      && renderWeekly()}
+        {view === 'mensal'       && renderMonthly()}
+        {view === 'confirmacao'  && renderConfirmacao()}
       </div>
 
       {/* ── Toast ── */}
