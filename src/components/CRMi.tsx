@@ -1031,6 +1031,7 @@ const CRMi: React.FC<CRMiProps> = ({
                             patient.lead_temperature === 'quente' ? 'bg-red-400' :
                             patient.lead_temperature === 'morno'  ? 'bg-amber-400' :
                             patient.lead_temperature === 'frio'   ? 'bg-sky-400' : '';
+                          const hasNoPhone = !patient.phone || patient.phone.trim() === '';
 
                           return (
                             <Draggable key={patient.id} draggableId={String(patient.id)} index={index}>
@@ -1071,7 +1072,13 @@ const CRMi: React.FC<CRMiProps> = ({
                                         )}
                                       </div>
                                       <div className="flex items-center gap-1.5 mt-0.5">
-                                        <span className="text-[11px] text-slate-500 truncate">{patient.phone || '—'}</span>
+                                        {hasNoPhone ? (
+                                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded" title="Telefone não identificado — preencher quando o lead informar">
+                                            📵 Sem telefone
+                                          </span>
+                                        ) : (
+                                          <span className="text-[11px] text-slate-500 truncate">{patient.phone}</span>
+                                        )}
                                         {patient.reminderDate && (
                                           <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-medium shrink-0">
                                             <CalendarClock size={9} />
@@ -1201,7 +1208,7 @@ const CRMi: React.FC<CRMiProps> = ({
 
                                       {/* Ações */}
                                       <div className="flex items-center gap-1 pt-1.5 border-t border-slate-100">
-                                        <button onClick={e => { e.stopPropagation(); openWhatsApp(patient.phone); }} disabled={!patient.phone} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors disabled:opacity-30" title="WhatsApp"><MessageCircle size={14} /></button>
+                                        <button onClick={e => { e.stopPropagation(); openWhatsApp(patient.phone); }} disabled={hasNoPhone} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors disabled:opacity-30" title={hasNoPhone ? 'Telefone não identificado' : 'WhatsApp'}><MessageCircle size={14} /></button>
                                         <button onClick={e => { e.stopPropagation(); openEditModal(patient); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Editar"><Edit2 size={14} /></button>
                                         <button onClick={e => { e.stopPropagation(); openHistoryPanel(patient); }} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors" title="Histórico"><History size={14} /></button>
                                         <button onClick={e => { e.stopPropagation(); onSelectPatient?.(String(patient.id)); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="Abrir prontuário"><AlarmClock size={14} /></button>
