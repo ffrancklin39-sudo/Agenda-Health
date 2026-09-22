@@ -79,14 +79,27 @@ const App: React.FC = () => {
       });
   }, [session]);
 
+  // Remove emojis e caracteres especiais de nomes vindos de fontes externas
+  // (WhatsApp, Instagram, formulários) — preserva letras acentuadas e hífen.
+  const sanitizeName = (raw: string): string =>
+    raw
+      .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+      .replace(/[\u{2600}-\u{27BF}]/gu, '')
+      .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
+      .replace(/[\u0000-\u001F​-‏﻿]/g, '')
+      .replace(/[*#_~`|<>{}[\]\\^$]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
   const mapPatientRow = (p: any): Patient => {
     const genderMap: Record<string,string> = { '1':'Masculino','2':'Feminino','3':'Indefinido' };
     const rawGender = p.gender || p.sexo || '';
     const gender = genderMap[String(rawGender)] || rawGender;
+    const rawName = p.name || p.nome_paciente || p.nome || 'Sem Nome';
     return {
       ...p,
       id: String(p.id),
-      name: p.name || p.nome_paciente || p.nome || 'Sem Nome',
+      name: sanitizeName(rawName),
       email: p.email || '',
       phone: p.phone || p.fixo_1 || p.telefone || '',
       phone2: p.phone2 || p.celular_2 || '',

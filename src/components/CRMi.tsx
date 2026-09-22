@@ -524,10 +524,35 @@ const CRMi: React.FC<CRMiProps> = ({
   // Colunas onde o score faz sentido (funil ativo, antes da conversão)
   const SCORE_COLUMNS = ['lead', 'negotiation', 'waiting'];
 
+  // ── Sanitização de nomes ─────────────────────────────────────────────────
+  // Remove emojis, caracteres de controle e símbolos especiais de nomes vindos
+  // de perfis externos (WhatsApp, Instagram, etc.). Preserva letras com acentos,
+  // hífen, apóstrofo e espaços — tudo que aparece em nomes humanos reais.
+  const sanitizeName = (raw: string): string => {
+    return raw
+      // Remove emojis e símbolos unicode (ranges de emoji standard)
+      .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+      .replace(/[\u{2600}-\u{27BF}]/gu, '')
+      .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
+      // Remove caracteres de controle e zero-width
+      .replace(/[\u0000-\u001F​-‏﻿]/g, '')
+      // Substitui asterisco/hashtag/underline (comuns em nomes de WhatsApp)
+      .replace(/[*#_~`|<>{}[\]\\^$]/g, '')
+      // Colapsa múltiplos espaços e remove espaços nas bordas
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
   // ── Filtro de pacientes por coluna ───────────────────────────────────────
   const getPatientsByStatus = (columnId: string): Patient[] => {
     return localPatients.filter(p => {
-      if (!(p as any).is_lead) return false;
+      // Mostra se marcado explicitamente como lead, OU se tem status de funil
+      // (para capturar leads inseridos por fontes externas sem a flag is_lead).
+      // A checagem de is_lead permanece RÍGIDA na automação de leads frios
+      // para não mover em massa pacientes clínicos migrados do feegow.
+      const isLead = (p as any).is_lead === true;
+      const hasFunnelStatus = ACTIVE_FUNNEL_STATUSES.includes((p.status || '').toLowerCase());
+      if (!isLead && !hasFunnelStatus) return false;
 
       // Filtro de busca
       if (searchQuery.trim()) {
@@ -573,8 +598,9 @@ const CRMi: React.FC<CRMiProps> = ({
     if (!newPatientData.name.trim()) return;
     setIsSubmitting(true);
     try {
+      const cleanName = sanitizeName(newPatientData.name);
       const payload = {
-        name: newPatientData.name,
+        name: cleanName,
         phone: newPatientData.phone,
         email: newPatientData.email,
         source: newPatientData.source || null,
@@ -585,17 +611,35 @@ const CRMi: React.FC<CRMiProps> = ({
         const { error } = await supabase.from('patients').update(payload).eq('id', editingPatientId);
         if (error) throw error;
       } else {
+        // ── Checagem de duplicata (telefone e e-mail) ─────────────────────
         const incomingPhone = phoneMatchKey(payload.phone);
         if (incomingPhone) {
           const existing = localPatients.find(p => phoneMatchKey(p.phone) === incomingPhone);
           if (existing) {
-            alert(`Já existe um paciente com este telefone (${payload.phone}). Abrindo o cadastro existente.`);
+            alert(`Já existe um cadastro com este telefone (${payload.phone}). Abrindo o prontuário existente.`);
             onSelectPatient?.(String(existing.id));
             setShowAddModal(false);
             return;
           }
         }
-        const { error } = await supabase.from('patients').insert([{ ...payload, status: 'lead', is_lead: true }]);
+        const incomingEmail = (payload.email || '').trim().toLowerCase();
+        if (incomingEmail) {
+          const existingByEmail = localPatients.find(p => (p.email || '').trim().toLowerCase() === incomingEmail);
+          if (existingByEmail) {
+            alert(`Já existe um cadastro com este e-mail (${payload.email}). Abrindo o prontuário existente.`);
+            onSelectPatient?.(String(existingByEmail.id));
+            setShowAddModal(false);
+            return;
+          }
+        }
+        // stage_entered_at inicializado na criação para que o timer de lead frio
+        // comece a partir de agora — não da data de criação que pode ser antiga.
+        const { error } = await supabase.from('patients').insert([{
+          ...payload,
+          status: 'lead',
+          is_lead: true,
+          stage_entered_at: new Date().toISOString(),
+        }]);
         if (error) throw error;
       }
       setShowAddModal(false);
