@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   DollarSign, TrendingUp, Users, Target, Calendar,
   Download, ArrowRight, BarChart3, Flame, Zap,
   LayoutDashboard, BookOpen, CreditCard, Receipt,
+  AlertTriangle, Clock, X as XIcon,
 } from 'lucide-react';
 import { Patient, UserRole } from '../types';
+import { supabase } from '../services/supabaseClient';
 import CaixaDiario   from './admin/finance/CaixaDiario';
 import Lancamentos   from './admin/finance/Lancamentos';
 import ContasPagar   from './admin/finance/ContasPagar';
@@ -24,9 +26,34 @@ const FINANCE_TABS: { id: FinanceTab; label: string; icon: React.ElementType }[]
   { id: 'contas-receber', label: 'Contas a Receber',  icon: Receipt },
 ];
 
+interface BillAlert { id: string; description: string; amount: number; due_date: string; status: string; }
+
 const Finance: React.FC<Props> = ({ patients }) => {
   const [financeTab, setFinanceTab] = useState<FinanceTab>('visao-geral');
+  const [overdueBills,   setOverdueBills]   = useState<BillAlert[]>([]);
+  const [upcomingBills,  setUpcomingBills]  = useState<BillAlert[]>([]);
+  const [alertDismissed, setAlertDismissed] = useState(false);
   const now = new Date();
+
+  useEffect(() => {
+    const fetchBillAlerts = async () => {
+      const today = new Date();
+      const todayStr    = today.toISOString().split('T')[0];
+      const in3Days     = new Date(today); in3Days.setDate(in3Days.getDate() + 3);
+      const in3DaysStr  = in3Days.toISOString().split('T')[0];
+
+      const { data } = await supabase
+        .from('bills')
+        .select('id, description, amount, due_date, status')
+        .in('status', ['pending', 'overdue'])
+        .order('due_date', { ascending: true });
+
+      if (!data) return;
+      setOverdueBills(data.filter(b => b.status === 'overdue'));
+      setUpcomingBills(data.filter(b => b.status === 'pending' && b.due_date >= todayStr && b.due_date <= in3DaysStr));
+    };
+    fetchBillAlerts();
+  }, []);
   const [period, setPeriod]           = useState<PeriodKey>('mes');
   const [customStart, setCustomStart] = useState('');
   const [customEnd,   setCustomEnd]   = useState('');
@@ -133,6 +160,58 @@ const Finance: React.FC<Props> = ({ patients }) => {
       {/* Visão Geral — conteúdo original */}
       {financeTab === 'visao-geral' && (
     <div className="space-y-4 animate-in fade-in duration-500">
+
+      {/* ── Alertas financeiros ── */}
+      {!alertDismissed && (overdueBills.length > 0 || upcomingBills.length > 0) && (
+        <div className="rounded-xl border overflow-hidden">
+          {overdueBills.length > 0 && (
+            <div className="flex items-start gap-3 px-4 py-3 bg-rose-50 border-b border-rose-200">
+              <AlertTriangle size={16} className="text-rose-500 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-rose-700">
+                  {overdueBills.length} conta{overdueBills.length > 1 ? 's' : ''} vencida{overdueBills.length > 1 ? 's' : ''}
+                </p>
+                <p className="text-xs text-rose-600 mt-0.5 truncate">
+                  {overdueBills.slice(0, 3).map(b =>
+                    `${b.description} (${b.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`
+                  ).join(' · ')}
+                  {overdueBills.length > 3 && ` · +${overdueBills.length - 3} mais`}
+                </p>
+              </div>
+              <button
+                onClick={() => setFinanceTab('contas-pagar')}
+                className="shrink-0 text-xs font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 px-2.5 py-1 rounded-lg transition-colors"
+              >Ver</button>
+            </div>
+          )}
+          {upcomingBills.length > 0 && (
+            <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border-b border-amber-200">
+              <Clock size={16} className="text-amber-500 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-amber-700">
+                  {upcomingBills.length} conta{upcomingBills.length > 1 ? 's' : ''} vence{upcomingBills.length > 1 ? 'm' : ''} em até 3 dias
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5 truncate">
+                  {upcomingBills.slice(0, 3).map(b => {
+                    const due = new Date(b.due_date + 'T00:00:00');
+                    const daysLeft = Math.ceil((due.getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+                    return `${b.description} — ${daysLeft === 0 ? 'hoje' : daysLeft === 1 ? 'amanhã' : `em ${daysLeft}d`}`;
+                  }).join(' · ')}
+                </p>
+              </div>
+              <button
+                onClick={() => setFinanceTab('contas-pagar')}
+                className="shrink-0 text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-lg transition-colors"
+              >Ver</button>
+            </div>
+          )}
+          <div className="flex justify-end px-3 py-1.5 bg-slate-50 border-t border-slate-100">
+            <button onClick={() => setAlertDismissed(true)} className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors">
+              <XIcon size={11} /> Dispensar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Header + filtros */}
       <div className="flex flex-wrap items-center justify-between gap-2">
