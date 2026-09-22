@@ -12,6 +12,7 @@
 //
 // Variáveis de ambiente necessárias (configurar via `supabase secrets set`):
 //   META_VERIFY_TOKEN        — string escolhida por você, usada no handshake
+//   META_APP_SECRET          — App Secret do app no Meta Business (para verificar assinatura HMAC)
 //   META_PAGE_ACCESS_TOKEN   — Page Access Token gerado no Meta Business
 //   SUPABASE_URL             — injetada automaticamente pelo Supabase
 //   SUPABASE_SERVICE_ROLE_KEY— injetada automaticamente pelo Supabase
@@ -26,8 +27,28 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const VERIFY_TOKEN = Deno.env.get('META_VERIFY_TOKEN') ?? '';
+const APP_SECRET = Deno.env.get('META_APP_SECRET') ?? '';
 const PAGE_ACCESS_TOKEN = Deno.env.get('META_PAGE_ACCESS_TOKEN') ?? '';
 const GRAPH_API_VERSION = 'v19.0';
+
+/** Verifica a assinatura HMAC-SHA256 enviada pela Meta no header X-Hub-Signature-256. */
+async function verifyMetaSignature(body: Uint8Array, signatureHeader: string | null): Promise<boolean> {
+  if (!APP_SECRET) return true; // se não configurou o secret, passa (retrocompatível)
+  if (!signatureHeader?.startsWith('sha256=')) return false;
+  const expected = signatureHeader.slice('sha256='.length);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(APP_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, body);
+  const computed = Array.from(new Uint8Array(sig))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return computed === expected;
+}
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
@@ -127,7 +148,18 @@ Deno.serve(async (req: Request) => {
   // ── Eventos de lead (POST) ──────────────────────────────────────────────
   if (req.method === 'POST') {
     try {
-      const body = await req.json();
+      const rawBody = await req.arrayBuffer();
+      const bodyBytes = new Uint8Array(rawBody);
+
+      // Verifica assinatura HMAC — protege contra POSTs falsos
+      const sig = req.headers.get('X-Hub-Signature-256');
+      const valid = await verifyMetaSignature(bodyBytes, sig);
+      if (!valid) {
+        console.warn('Webhook rejeitado: assinatura inválida');
+        return new Response('Forbidden', { status: 403 });
+      }
+
+      const body = JSON.parse(new TextDecoder().decode(bodyBytes));
       const entries = body.entry ?? [];
 
       for (const entry of entries) {
