@@ -7,7 +7,7 @@ import {
   Phone, MessageCircle, DollarSign, Check, UserPlus, BellRing, Bell,
   Edit2, Trash2, AlarmClock, AlignLeft, X, Stethoscope, Search, Clock, History,
   Sparkles, Flame, Thermometer, Snowflake, RefreshCw, Target, Copy, CopyCheck,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, AlertTriangle, CalendarClock,
 } from 'lucide-react';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
 import { analyzePatient, isGeminiConfigured } from '../services/geminiService';
@@ -971,7 +971,8 @@ const CRMi: React.FC<CRMiProps> = ({
 
                         {columnPatients.map((patient, index) => {
                           const days = getDaysInPipeline(patient);
-                          const isUrgent = days > 7 && ['lead', 'negotiation'].includes(columnId);
+                          const daysInStage = getDaysInStage(patient);
+                          const isAtRisk = daysInStage >= COLD_LEAD_DAYS && SCORE_COLUMNS.includes(columnId);
                           const sourceConfig = patient.source ? SOURCES[patient.source] : null;
                           const leadScore = SCORE_COLUMNS.includes(columnId) ? calculateLeadScore(patient) : null;
                           const assignedProfessional = patient.assigned_to
@@ -998,8 +999,8 @@ const CRMi: React.FC<CRMiProps> = ({
                                   className={`bg-white rounded-xl border overflow-hidden transition-shadow ${
                                     snapshot.isDragging
                                       ? 'border-indigo-400 shadow-2xl ring-2 ring-indigo-200'
-                                      : isUrgent
-                                      ? 'border-amber-300 shadow-sm hover:shadow-md'
+                                      : isAtRisk
+                                      ? 'border-rose-300 shadow-sm hover:shadow-md'
                                       : 'border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-200'
                                   }`}
                                 >
@@ -1018,17 +1019,33 @@ const CRMi: React.FC<CRMiProps> = ({
                                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tempDotColor}`} title={patient.lead_temperature || ''} />
                                         )}
                                         {patient.reminderDate && <BellRing size={10} className="text-amber-500 shrink-0" />}
+                                        {isAtRisk && (
+                                          <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-600 text-[9px] font-bold shrink-0" title={`${daysInStage} dias sem movimentação`}>
+                                            <AlertTriangle size={8} />
+                                            {daysInStage}d
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="flex items-center gap-1.5 mt-0.5">
                                         <span className="text-[11px] text-slate-500 truncate">{patient.phone || '—'}</span>
-                                        {days > 0 && (
-                                          <span className={`text-[10px] font-medium shrink-0 ${isUrgent ? 'text-amber-600' : 'text-slate-400'}`}>
+                                        {patient.reminderDate && (
+                                          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-medium shrink-0">
+                                            <CalendarClock size={9} />
+                                            {new Date(patient.reminderDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                          </span>
+                                        )}
+                                        {!patient.reminderDate && days > 0 && (
+                                          <span className="text-[10px] font-medium text-slate-400 shrink-0">
                                             · {days}d{entryDateStr ? ` (${entryDateStr})` : ''}
                                           </span>
                                         )}
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
+                                      {/* Fase da jornada */}
+                                      <span className={`text-[9px] px-1 py-0.5 rounded border font-bold ${config.text} ${config.border} bg-white`} title={`Fase: ${config.title}`}>
+                                        {config.icon}
+                                      </span>
                                       {sourceConfig && (
                                         <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${sourceConfig.bg} ${sourceConfig.color}`}>
                                           {sourceConfig.label}
@@ -1098,6 +1115,24 @@ const CRMi: React.FC<CRMiProps> = ({
                                           )}
                                         </div>
                                       </div>
+
+                                      {/* Alerta lead em risco */}
+                                      {isAtRisk && (
+                                        <div className="mb-2 flex items-center gap-1.5 px-2 py-1.5 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-700 font-semibold">
+                                          <AlertTriangle size={12} className="shrink-0" />
+                                          Lead em risco — {daysInStage} dias sem movimentação
+                                        </div>
+                                      )}
+
+                                      {/* Próximo contato */}
+                                      {patient.reminderDate && (
+                                        <div className="mb-2 flex items-center gap-1.5 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-700">
+                                          <CalendarClock size={12} className="shrink-0" />
+                                          <span className="font-semibold">Próximo contato:</span>
+                                          <span>{new Date(patient.reminderDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                          {patient.reminderNote && <span className="truncate text-amber-600 ml-1">· {patient.reminderNote}</span>}
+                                        </div>
+                                      )}
 
                                       {/* Valor */}
                                       {safeParseFloat(patient.price) > 0 && (
