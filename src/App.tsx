@@ -17,6 +17,7 @@ import Tasks from './components/Tasks';
 import ProfitDashboard from './components/bi/ProfitDashboard';
 import Reports from './components/admin/Reports';
 import { supabase } from './services/supabaseClient';
+import { sanitizePhone } from './phoneUtils';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
@@ -101,9 +102,9 @@ const App: React.FC = () => {
       id: String(p.id),
       name: sanitizeName(rawName),
       email: p.email || '',
-      phone: p.phone || p.fixo_1 || p.telefone || '',
-      phone2: p.phone2 || p.celular_2 || '',
-      cell2: p.cell2 || p.celular || '',
+      phone: sanitizePhone(p.phone || p.fixo_1 || p.telefone || ''),
+      phone2: sanitizePhone(p.phone2 || p.celular_2 || ''),
+      cell2: sanitizePhone(p.cell2 || p.celular || ''),
       cpf: p.cpf || '',
       record_number: p.record_number || String(p.id || ''),
       birth_date: p.birth_date || p.nascimento || p.date_of_birth || '',

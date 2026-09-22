@@ -3,6 +3,53 @@ export const normalizePhone = (value: string | null | undefined): string => {
   return String(value ?? '').replace(/\D/g, '');
 };
 
+// Trata identificadores JID do WhatsApp antes de armazenar/exibir.
+//
+// Formatos reconhecidos:
+//   5521999887766@c.us          → contato pessoal → extrai e normaliza o número
+//   5521999887766@s.whatsapp.net → idem
+//   20809116553293@lid           → "linked identity" — NÃO é número de telefone;
+//                                  retorna '' para que o CRM exiba '—' e não um
+//                                  código incompreensível.
+//   120363xxxxxx@g.us            → grupo → retorna '' (não é telefone)
+//
+// Para qualquer outro formato (número normal, com máscara, etc.), retorna limpo.
+export const sanitizePhone = (raw: string | null | undefined): string => {
+  const value = String(raw ?? '').trim();
+  if (!value) return '';
+
+  // JID com sufixo WhatsApp
+  if (value.includes('@')) {
+    const suffix = value.split('@')[1]?.toLowerCase() ?? '';
+    const numPart = value.split('@')[0];
+
+    // @lid e @g.us não são telefones reais
+    if (suffix === 'lid' || suffix === 'g.us') return '';
+
+    // @c.us e @s.whatsapp.net contêm o número com código de país
+    if (suffix === 'c.us' || suffix === 's.whatsapp.net') {
+      let digits = numPart.replace(/\D/g, '');
+      // Remove código do Brasil (55) se presente
+      if (digits.startsWith('55') && digits.length >= 12) digits = digits.slice(2);
+      // Remove 9º dígito extra se houver (11 dígitos = DDD + 9 + número)
+      if (digits.length === 11 && digits.charAt(2) === '9') {
+        digits = digits.slice(0, 2) + digits.slice(3);
+      }
+      // Formata como (DDD) XXXX-XXXX
+      if (digits.length === 10) {
+        return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+      }
+      return digits; // retorna só os dígitos se não encaixar no formato brasileiro
+    }
+
+    // Sufixo desconhecido — retorna vazio para não exibir lixo
+    return '';
+  }
+
+  // Número normal (já formatado ou só dígitos) — retorna como veio
+  return value;
+};
+
 // Converte para Title Case enquanto o usuário digita.
 // Impede tudo maiúsculo ou tudo minúsculo — cada palavra começa com maiúscula.
 export const toTitleCase = (value: string): string => {
