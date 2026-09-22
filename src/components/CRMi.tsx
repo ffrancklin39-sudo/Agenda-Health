@@ -156,6 +156,19 @@ const CRMi: React.FC<CRMiProps> = ({
       return next;
     });
 
+  // ── Colunas recolhidas (thin strip) ──────────────────────────────────────
+  // "confirmed" e "discarded" começam recolhidas por padrão — são colunas de
+  // arquivo e ocupam espaço precioso no dia a dia sem serem consultadas com frequência.
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(
+    new Set(['confirmed', 'discarded'])
+  );
+  const toggleColumn = (id: string) =>
+    setCollapsedColumns(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   // ── Atribuição de responsável ─────────────────────────────────────────────
   // Controla qual card está com o seletor de responsável aberto no momento
   const [assigningPatientId, setAssigningPatientId] = useState<string | null>(null);
@@ -221,24 +234,37 @@ const CRMi: React.FC<CRMiProps> = ({
   // para "Leads Frios". A partir daí entra no fluxo do Projeto Lazaro
   // (conteúdo semanal via Sofia — Fase 3, ainda pendente de ativação):
   // ou o lead bloqueia, ou levanta a mão e volta ao funil.
-  // ── Scroll do board: useEffect não-passivo (React onWheel é passivo e ignora preventDefault) ──
+  // ── Scroll do board: handler não-passivo para roteamento preciso ────────────
+  // Problema original: ao chegar no fim de uma coluna o scroll "vazava" para o
+  // board horizontal, criando um dead zone frustrante.
+  // Solução: só redireciona para horizontal quando a coluna já está no limite
+  // (topo ou fundo), detectado com scrollTop, scrollHeight e clientHeight.
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
 
     const handler = (e: WheelEvent) => {
-      // Se está dentro de uma coluna com scroll vertical, deixa a coluna scrollar
-      const inCol = (e.target as HTMLElement).closest('[data-col-scroll="true"]');
-      if (inCol) {
-        // Mas bloqueia o vazamento para fora do board todo
-        e.stopPropagation();
-        return;
-      }
-      // Scroll horizontal puro (trackpad) — deixa o browser tratar
+      // Scroll horizontal puro (trackpad two-finger) — deixa o browser tratar
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      // Redireciona scroll vertical → horizontal no board
+
+      const colEl = (e.target as HTMLElement).closest<HTMLElement>('[data-col-scroll="true"]');
+      if (colEl) {
+        const atTop    = colEl.scrollTop === 0;
+        const atBottom = colEl.scrollTop + colEl.clientHeight >= colEl.scrollHeight - 1;
+        const goingUp  = e.deltaY < 0;
+        const goingDown= e.deltaY > 0;
+
+        // Coluna ainda tem conteúdo para scrollar nessa direção → deixa scrollar
+        if ((goingDown && !atBottom) || (goingUp && !atTop)) {
+          e.stopPropagation();
+          return;
+        }
+        // Chegou no limite da coluna → redireciona para o board horizontal
+      }
+
+      // Fora de coluna ou no limite dela: scroll horizontal no board
       e.preventDefault();
-      el.scrollLeft += e.deltaY * 1.5;
+      el.scrollLeft += e.deltaY * 1.2;
     };
 
     el.addEventListener('wheel', handler, { passive: false });
@@ -959,6 +985,30 @@ const CRMi: React.FC<CRMiProps> = ({
             {Object.entries(COLUMNS).map(([columnId, config]) => {
               const columnPatients = getPatientsByStatus(columnId);
               const totalValue = columnPatients.reduce((acc, curr) => acc + safeParseFloat(curr.price), 0);
+              const isCollapsed = collapsedColumns.has(columnId);
+
+              // ── Coluna recolhida: faixa fina clicável ──────────────────────
+              if (isCollapsed) {
+                return (
+                  <div
+                    key={columnId}
+                    onClick={() => toggleColumn(columnId)}
+                    title={`Expandir ${config.title}`}
+                    className={`w-10 flex flex-col items-center py-3 gap-2 rounded-xl border ${config.border} bg-slate-50/50 shrink-0 cursor-pointer hover:bg-white transition-colors select-none`}
+                  >
+                    <span className={`text-base`}>{config.icon}</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-white/80 ${config.text}`}>
+                      {columnPatients.length}
+                    </span>
+                    <span
+                      className={`text-[9px] font-bold uppercase tracking-widest ${config.text} opacity-60`}
+                      style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                    >
+                      {config.title}
+                    </span>
+                  </div>
+                );
+              }
 
               return (
                 <div
@@ -981,9 +1031,18 @@ const CRMi: React.FC<CRMiProps> = ({
                           )}
                         </div>
                       </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/70 ${config.text}`}>
-                        {columnPatients.length}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/70 ${config.text}`}>
+                          {columnPatients.length}
+                        </span>
+                        <button
+                          onClick={() => toggleColumn(columnId)}
+                          title="Recolher coluna"
+                          className={`p-0.5 rounded hover:bg-black/5 transition-colors ${config.text} opacity-50 hover:opacity-100`}
+                        >
+                          <ChevronUp size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
