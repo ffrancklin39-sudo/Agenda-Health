@@ -20,6 +20,7 @@ interface Bill {
   recurrence: string;
   document_number: string | null;
   notes: string | null;
+  boleto_url: string | null;
   created_at: string;
 }
 
@@ -63,7 +64,7 @@ const inputCls = `w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm 
 const blankBill = () => ({
   description: '', category: 'outros', supplier: '', amount: 0,
   due_date: new Date().toISOString().slice(0, 10),
-  recurrence: 'none', document_number: '', notes: '',
+  recurrence: 'none', document_number: '', notes: '', boleto_url: '',
 });
 
 // ─── Modal de cadastro ────────────────────────────────────────
@@ -93,6 +94,7 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
       recurrence:      form.recurrence,
       document_number: form.document_number || null,
       notes:           form.notes || null,
+      boleto_url:      (form as any).boleto_url || null,
     };
     const { error: err } = initial?.id
       ? await supabase.from('bills').update(payload).eq('id', initial.id)
@@ -141,6 +143,11 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Nº Documento</label>
             <input className={inputCls} value={form.document_number ?? ''} onChange={e => set('document_number', e.target.value)} placeholder="NF, boleto, contrato..." />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Link do Boleto</label>
+            <input className={inputCls} value={(form as any).boleto_url ?? ''} onChange={e => set('boleto_url', e.target.value)} placeholder="https://..." />
+            <p className="text-[10px] text-slate-400 mt-1">Será enviado no lembrete WhatsApp junto com os dados da conta.</p>
           </div>
           <div className="col-span-2">
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Observações</label>
