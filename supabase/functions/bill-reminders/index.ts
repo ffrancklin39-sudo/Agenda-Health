@@ -128,9 +128,12 @@ Deno.serve(async () => {
       .eq('key', 'reminder_contacts')
       .single();
 
-    const contacts: ReminderContact[] = setting?.value
-      ? JSON.parse(setting.value)
-      : [];
+    // value é JSONB — Supabase já retorna parsed, não precisa de JSON.parse
+    const contacts: ReminderContact[] = Array.isArray(setting?.value)
+      ? setting.value
+      : typeof setting?.value === 'string'
+        ? JSON.parse(setting.value)
+        : [];
 
     if (contacts.length === 0) {
       console.warn('Nenhum contato de lembrete configurado em clinic_settings.');
