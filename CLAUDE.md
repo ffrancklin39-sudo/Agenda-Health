@@ -1,8 +1,8 @@
 # 🏥 SintesIA — Documentação do Projeto
 
 **Status:** Em desenvolvimento ativo
-**Última atualização:** 2026-06-03
-**Próxima prioridade:** CRM — melhorias e funcionalidades avançadas
+**Última atualização:** 2026-09-23
+**Próxima prioridade:** WhatsApp API oficial (Meta) + preparação multi-tenant
 
 ---
 
@@ -215,8 +215,48 @@ npm run build    # build produção
 | Groq | ✅ Instalado |
 | n8n | 📋 Planejado |
 | Sofia (SDR) | 📋 Planejado |
-| WhatsApp API | 📋 Pendente |
+| WhatsApp Business API (Meta) | ⏳ Chip virtual pronto, pendente registro |
+| WAHA (self-hosted) | ⚠️ Sessão instável — será substituído pela API oficial |
 | Feegow | ✅ Dados migrados (backup em pasta separada) |
+
+---
+
+---
+
+## 🚀 Visão de Escala — Multi-tenant (Próxima Fase)
+
+SintesIA foi projetado para eventualmente atender múltiplas clínicas como SaaS. Decisões arquiteturais já tomadas em função disso:
+
+### WhatsApp por clínica
+- Cada clínica terá seu próprio número WhatsApp Business registrado
+- Credenciais armazenadas em `clinic_settings` (chave `whatsapp_phone_id`, `whatsapp_token`)
+- Sofia e lembretes automáticos leem as credenciais da clínica ativa dinamicamente
+- **BSP recomendado:** Zenvia ou Take Blip (provisionamento programático de números)
+- Onboarding via wizard no próprio SintesIA: clínica conecta o número → tudo funciona
+
+### Arquitetura multi-tenant planejada
+- Adicionar coluna `clinic_id` nas tabelas principais (patients, appointments, payments, bills)
+- RLS filtra automaticamente por `clinic_id` do usuário logado
+- Um único Supabase Project pode servir N clínicas com isolamento total via RLS
+- Cada clínica tem seus próprios profissionais, serviços, configurações e financeiro
+
+### Roadmap de escala
+1. ✅ Core financeiro + CRM funcionando (Candia — clínica piloto)
+2. ⏳ WhatsApp API oficial + Sofia ativada na Candia
+3. 📋 Extração do modelo multi-tenant (clinic_id + RLS)
+4. 📋 Wizard de onboarding para novas clínicas
+5. 📋 Painel administrativo do SintesIA (gestão de clínicas)
+
+---
+
+## 💬 Lembretes Automáticos (bill-reminders)
+
+Edge Function `bill-reminders` já deployada:
+- Busca contas vencidas ou vencendo em ≤3 dias
+- Envia WhatsApp para: Fellipe (61 99835-6364) e Roberto (61 99430-0500)
+- Contatos configurados em `clinic_settings.reminder_contacts`
+- **Status atual:** aguardando migração WAHA → API oficial Meta
+- Cron automático: `0 11 * * *` (08:00 BRT) via pg_cron — configurar após validar envio
 
 ---
 
