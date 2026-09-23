@@ -41,15 +41,24 @@ interface ReminderContact {
   phone: string; // formato: 5561999999999
 }
 
+const WAHA_USERNAME = Deno.env.get('WAHA_USERNAME') ?? '';
+const WAHA_PASSWORD = Deno.env.get('WAHA_PASSWORD') ?? '';
+
 /** Envia mensagem de texto via WAHA */
 async function sendWhatsApp(phone: string, text: string): Promise<void> {
   const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
+
+  // Suporta API Key (X-Api-Key), Basic Auth (usuário/senha) ou sem auth
+  const authHeaders: Record<string, string> = {};
+  if (WAHA_API_KEY) {
+    authHeaders['X-Api-Key'] = WAHA_API_KEY;
+  } else if (WAHA_USERNAME && WAHA_PASSWORD) {
+    authHeaders['Authorization'] = 'Basic ' + btoa(`${WAHA_USERNAME}:${WAHA_PASSWORD}`);
+  }
+
   const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(WAHA_API_KEY ? { 'X-Api-Key': WAHA_API_KEY } : {}),
-    },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({ chatId, text, session: WAHA_SESSION }),
   });
   if (!res.ok) {
