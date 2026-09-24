@@ -19,6 +19,7 @@ interface Bill {
   paid_at: string | null;
   status: string;
   recurrence: string;
+  recurrence_end: string | null;
   payment_method: string | null;
   bank_account: string | null;
   document_number: string | null;
@@ -81,9 +82,25 @@ const STATUS_LABEL: Record<string, string> = {
   pending: 'Pendente', paid: 'Pago', overdue: 'Vencido', cancelled: 'Cancelado',
 };
 
-const fmt     = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR');
+const fmt      = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtDate  = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR');
 const monthLabel = (d: Date) => `${MONTHS_PT[d.getMonth()]} ${d.getFullYear()}`;
+
+/** Converte entrada do usuário (com vírgula ou ponto) para float */
+const parseAmt = (v: string | number): number =>
+  parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0;
+
+/** Adiciona N períodos a uma data ISO (YYYY-MM-DD) */
+function addPeriods(dateStr: string, recurrence: string, n: number): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  switch (recurrence) {
+    case 'weekly':    d.setDate(d.getDate() + 7 * n);   break;
+    case 'monthly':   d.setMonth(d.getMonth() + n);      break;
+    case 'quarterly': d.setMonth(d.getMonth() + 3 * n);  break;
+    case 'yearly':    d.setFullYear(d.getFullYear() + n); break;
+  }
+  return d.toISOString().slice(0, 10);
+}
 
 const inputCls = `w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800
   bg-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition-all`;
@@ -115,11 +132,10 @@ const PayBillModal: React.FC<PayBillModalProps> = ({ bill, onPay, onClose, savin
   const set = (k: keyof PayData, v: any) => setData(d => ({ ...d, [k]: v }));
 
   const handlePay = () => {
-    if (!data.amount_paid || Number(data.amount_paid) <= 0) {
-      setError('Informe o valor pago.'); return;
-    }
+    const amt = parseAmt(String(data.amount_paid));
+    if (!amt || amt <= 0) { setError('Informe o valor pago.'); return; }
     setError(null);
-    onPay(data);
+    onPay({ ...data, amount_paid: amt });
   };
 
   return (
@@ -148,11 +164,11 @@ const PayBillModal: React.FC<PayBillModalProps> = ({ bill, onPay, onClose, savin
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Valor pago (R$) *</label>
             <input
-              type="number" min={0} step={0.01}
+              type="text" inputMode="decimal"
               className={inputCls}
               value={data.amount_paid}
-              onChange={e => set('amount_paid', e.target.value === '' ? '' : parseFloat(e.target.value))}
-              onFocus={e => { if (data.amount_paid === 0) set('amount_paid', ''); }}
+              onChange={e => set('amount_paid', e.target.value)}
+              onFocus={() => { if (!data.amount_paid || data.amount_paid === 0) set('amount_paid', ''); }}
               placeholder="0,00"
             />
           </div>
@@ -306,17 +322,48 @@ interface BillFormProps {
 }
 
 const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onClose }) => {
-  const [form, setForm] = useState<any>({ ...blankBill(), ...initial, amount: initial?.amount ?? '' });
+  const [form, setForm] = useState<any>({
+    ...blankBill(), ...initial,
+    amount: initial?.amount != null ? String(initial.amount).replace('.', ',') : '',
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
+  // Controles de recorrência expandida
+  type RecMode = 'forever' | 'installments' | 'end_date';
+  const [recMode, setRecMode]       = useState<RecMode>(
+    initial?.recurrence_end ? 'end_date' : 'forever',
+  );
+  const [numInstallments, setNumInstallments] = useState<number | ''>(12);
+  const [endDate, setEndDate] = useState<string>(initial?.recurrence_end ?? '');
+
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+
+  // Calcula data final e total para o resumo de parcelas
+  const installmentSummary = useMemo(() => {
+    const amt   = parseAmt(String(form.amount));
+    const n     = Number(numInstallments);
+    if (!n || n < 2 || !amt || form.recurrence === 'none') return null;
+    const lastDate = addPeriods(form.due_date, form.recurrence, n - 1);
+    return { total: amt * n, lastDate, n };
+  }, [form.amount, form.due_date, form.recurrence, numInstallments]);
 
   const handleSave = async () => {
     if (!form.description) { setError('Informe a descrição.'); return; }
-    const amt = parseFloat(String(form.amount));
-    if (!amt || amt <= 0) { setError('Informe o valor.'); return; }
+    const amt = parseAmt(String(form.amount));
+    if (!amt || amt <= 0) { setError('Informe o valor (ex: 150,00).'); return; }
     setSaving(true); setError(null);
+
+    // Calcula recurrence_end
+    let recurrenceEnd: string | null = null;
+    if (form.recurrence !== 'none') {
+      if (recMode === 'installments' && numInstallments && Number(numInstallments) >= 2) {
+        recurrenceEnd = addPeriods(form.due_date, form.recurrence, Number(numInstallments) - 1);
+      } else if (recMode === 'end_date' && endDate) {
+        recurrenceEnd = endDate;
+      }
+    }
+
     const payload = {
       description:     form.description,
       category:        form.category,
@@ -324,6 +371,7 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
       amount:          amt,
       due_date:        form.due_date,
       recurrence:      form.recurrence,
+      recurrence_end:  recurrenceEnd,
       document_number: form.document_number || null,
       notes:           form.notes || null,
       boleto_url:      form.boleto_url || null,
@@ -359,11 +407,11 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Valor (R$) *</label>
             <input
-              type="number" min={0} step={0.01}
+              type="text" inputMode="decimal"
               className={inputCls}
               value={form.amount}
               onChange={e => set('amount', e.target.value)}
-              onFocus={e => { if (form.amount === 0 || form.amount === '0') set('amount', ''); }}
+              onFocus={e => { if (!form.amount || form.amount === '0') set('amount', ''); }}
               placeholder="0,00"
             />
           </div>
@@ -371,12 +419,63 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Vencimento *</label>
             <input type="date" className={inputCls} value={form.due_date} onChange={e => set('due_date', e.target.value)} />
           </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Recorrência</label>
-            <select className={inputCls} value={form.recurrence} onChange={e => set('recurrence', e.target.value)}>
+          <div className={form.recurrence !== 'none' ? '' : 'col-span-1'}>
+            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Repetição</label>
+            <select className={inputCls} value={form.recurrence} onChange={e => { set('recurrence', e.target.value); setRecMode('forever'); }}>
               {RECURRENCES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
+
+          {/* Recorrência expandida */}
+          {form.recurrence !== 'none' && (
+            <div className="col-span-2 bg-indigo-50 border border-indigo-100 rounded-xl p-3 space-y-2">
+              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide">Quando termina?</p>
+              <div className="flex flex-col gap-1.5">
+                {/* Opção 1: nunca */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="recMode" checked={recMode === 'forever'}
+                    onChange={() => setRecMode('forever')}
+                    className="accent-indigo-600" />
+                  <span className="text-xs text-slate-700">Nunca (repetição contínua)</span>
+                </label>
+
+                {/* Opção 2: N parcelas */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="recMode" checked={recMode === 'installments'}
+                    onChange={() => setRecMode('installments')}
+                    className="accent-indigo-600" />
+                  <span className="text-xs text-slate-700">Após</span>
+                  <input
+                    type="number" min={2} max={360}
+                    className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs text-center outline-none focus:border-indigo-400 bg-white"
+                    value={numInstallments}
+                    onChange={e => setNumInstallments(e.target.value === '' ? '' : parseInt(e.target.value))}
+                    onClick={() => setRecMode('installments')}
+                  />
+                  <span className="text-xs text-slate-700">vezes</span>
+                  {installmentSummary && recMode === 'installments' && (
+                    <span className="text-[10px] text-indigo-600 font-semibold ml-1">
+                      Total: {fmt(installmentSummary.total)} · até {fmtDate(installmentSummary.lastDate)}
+                    </span>
+                  )}
+                </label>
+
+                {/* Opção 3: até uma data */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="recMode" checked={recMode === 'end_date'}
+                    onChange={() => setRecMode('end_date')}
+                    className="accent-indigo-600" />
+                  <span className="text-xs text-slate-700">Até</span>
+                  <input
+                    type="date"
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-indigo-400 bg-white"
+                    value={endDate}
+                    onChange={e => { setEndDate(e.target.value); setRecMode('end_date'); }}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Fornecedor / Credor</label>
             <input className={inputCls} value={form.supplier ?? ''} onChange={e => set('supplier', e.target.value)} placeholder="Ex: Imobiliária Central" />
