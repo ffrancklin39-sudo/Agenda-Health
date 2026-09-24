@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS bills (
 
   -- Identificação
   description     TEXT NOT NULL,
-  category        bill_category_enum NOT NULL DEFAULT 'outros',
+  category        TEXT NOT NULL DEFAULT 'outros',
   supplier        TEXT,              -- fornecedor / credor
 
   -- Valores
@@ -233,7 +233,7 @@ UNION ALL
     -COALESCE(b.amount_paid, b.amount)      AS net_amount,  -- negativo para cálculo
     COALESCE(b.payment_method, '—')         AS payment_method,
     b.status::TEXT                          AS status,
-    b.category::TEXT                        AS category,
+    b.category                              AS category,
     NULL::UUID                              AS professional_id,
     NULL::UUID                              AS service_id,
     NULL::UUID                              AS patient_id,
