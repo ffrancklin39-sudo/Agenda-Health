@@ -536,9 +536,11 @@ const ContasPagar: React.FC = () => {
 
   const catLabel = useMemo(() => Object.fromEntries(allCategories.map(c => [c.value, c.label])), [allCategories]);
 
-  // Carrega contas
+  // Carrega contas + gera ocorrências recorrentes futuras
   const load = useCallback(async () => {
     setLoading(true);
+    // Gera os próximos 12 meses de contas recorrentes (idempotente)
+    await supabase.rpc('fn_generate_recurring_bills', { p_months_ahead: 12 });
     const { data } = await supabase.from('bills').select('*').order('due_date', { ascending: true });
     setBills((data ?? []) as Bill[]);
     setLoading(false);
@@ -548,9 +550,15 @@ const ContasPagar: React.FC = () => {
   const loadCategories = useCallback(async () => {
     const { data } = await supabase
       .from('clinic_settings').select('value').eq('key', 'bill_categories').maybeSingle();
-    if (data?.value && Array.isArray(data.value)) {
-      setExtraCategories(data.value as { value: string; label: string }[]);
-    }
+    if (!data) return;
+    const val = data.value;
+    // value pode vir como array (JSONB já parsed) ou string
+    const parsed: { value: string; label: string }[] = Array.isArray(val)
+      ? val
+      : typeof val === 'string'
+        ? JSON.parse(val)
+        : [];
+    if (parsed.length > 0) setExtraCategories(parsed);
   }, []);
 
   useEffect(() => { load(); loadCategories(); }, [load, loadCategories]);
@@ -610,11 +618,27 @@ const ContasPagar: React.FC = () => {
 
   const saveCategories = async (cats: { value: string; label: string }[]) => {
     const extra = cats.filter(c => !DEFAULT_CATEGORIES.find(d => d.value === c.value));
+
+    // Tenta INSERT primeiro, depois UPDATE se já existir
+    const { error: upsertErr } = await supabase
+      .from('clinic_settings')
+      .upsert({ key: 'bill_categories', value: JSON.stringify(extra) }, { onConflict: 'key' });
+
+    if (upsertErr) {
+      // Fallback: UPDATE direto caso upsert falhe por RLS
+      const { error: updateErr } = await supabase
+        .from('clinic_settings')
+        .update({ value: JSON.stringify(extra) })
+        .eq('key', 'bill_categories');
+      if (updateErr) {
+        console.error('saveCategories error:', updateErr.message);
+        alert('Erro ao salvar categorias: ' + updateErr.message);
+        return;
+      }
+    }
+
+    // Persiste no estado local mesmo se houve fallback
     setExtraCategories(extra);
-    await supabase.from('clinic_settings').upsert(
-      { key: 'bill_categories', value: extra },
-      { onConflict: 'key' },
-    );
     setShowCatManager(false);
   };
 
