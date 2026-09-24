@@ -546,19 +546,34 @@ const ContasPagar: React.FC = () => {
     setLoading(false);
   }, []);
 
-  // Carrega categorias customizadas
+  // ─── Persistência de categorias ──────────────────────────────
+  // localStorage é a fonte primária (funciona offline, sem SQL)
+  // Supabase é backup para sincronizar entre dispositivos
+  const CATS_KEY = 'sintesia_bill_cats';
+
   const loadCategories = useCallback(async () => {
-    const { data } = await supabase
-      .from('clinic_settings').select('value').eq('key', 'bill_categories').maybeSingle();
-    if (!data) return;
-    const val = data.value;
-    // value pode vir como array (JSONB já parsed) ou string
-    const parsed: { value: string; label: string }[] = Array.isArray(val)
-      ? val
-      : typeof val === 'string'
-        ? JSON.parse(val)
-        : [];
-    if (parsed.length > 0) setExtraCategories(parsed);
+    // 1. Tenta Supabase (prioridade: mais recente pode estar lá)
+    try {
+      const { data } = await supabase
+        .from('clinic_settings').select('value').eq('key', 'bill_categories').maybeSingle();
+      const val = data?.value;
+      const parsed: { value: string; label: string }[] = Array.isArray(val) && val.length > 0
+        ? val
+        : typeof val === 'string' && val.startsWith('[')
+          ? JSON.parse(val)
+          : [];
+      if (parsed.length > 0) {
+        setExtraCategories(parsed);
+        localStorage.setItem(CATS_KEY, JSON.stringify(parsed));
+        return;
+      }
+    } catch { /* sem acesso ao Supabase, ok */ }
+
+    // 2. Fallback: localStorage
+    try {
+      const raw = localStorage.getItem(CATS_KEY);
+      if (raw) setExtraCategories(JSON.parse(raw));
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => { load(); loadCategories(); }, [load, loadCategories]);
@@ -619,13 +634,14 @@ const ContasPagar: React.FC = () => {
   const saveCategories = async (cats: { value: string; label: string }[]) => {
     const extra = cats.filter(c => !DEFAULT_CATEGORIES.find(d => d.value === c.value));
 
-    // Usa função SECURITY DEFINER para ignorar RLS no upsert
-    const { error } = await supabase.rpc('save_bill_categories', { p_categories: extra });
-    if (error) {
-      console.error('saveCategories RPC error:', error.message);
-      alert('Erro ao salvar categorias: ' + error.message);
-      return;
-    }
+    // Salva em localStorage imediatamente — sempre funciona
+    try { localStorage.setItem(CATS_KEY, JSON.stringify(extra)); } catch { /* ignore */ }
+
+    // Tenta Supabase em background (sem bloquear)
+    supabase.rpc('save_bill_categories', { p_categories: extra })
+      .then(({ error }) => {
+        if (error) console.warn('Supabase categories backup failed:', error.message);
+      });
 
     setExtraCategories(extra);
     setShowCatManager(false);
