@@ -172,16 +172,17 @@ type PaymentMethodFull = 'pix' | 'debit' | 'credit_1x' | 'credit_2_6x' | 'credit
 ## 🚧 Pendências Conhecidas do Módulo Financeiro
 (em ordem de prioridade — próximas sessões)
 
-1. Pagamento parcelado do paciente (installments)
-2. Pagamento parcial / saldo devedor
-3. Tela de pagamento de comissões aos profissionais
-4. Juros e multa em contas vencidas
-5. Conta bancária vinculada por transação
+1. **Módulo Contas Bancárias** — cadastro de contas, saldo por conta, vinculação com pagamentos/despesas
+2. Pagamento parcelado do paciente (installments)
+3. Pagamento parcial / saldo devedor
+4. Tela de pagamento de comissões aos profissionais
+5. Juros e multa em contas vencidas
 6. Caixa pequeno (lançamento rápido)
 7. Projeção de fluxo de caixa 30/60/90 dias
 8. Competência vs caixa no DRE
-9. Convênios/planos de saúde (projeto separado)
-10. Fechamento de período contábil
+9. **Integração Pluggy (Open Finance)** — saldo real de contas via API, ~R$ 1-2/conta/mês, média dificuldade
+10. Convênios/planos de saúde (projeto separado)
+11. Fechamento de período contábil
 
 ---
 

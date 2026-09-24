@@ -7,23 +7,25 @@ import {
 } from 'lucide-react';
 import { Patient, UserRole } from '../types';
 import { supabase } from '../services/supabaseClient';
-import CaixaDiario   from './admin/finance/CaixaDiario';
-import Lancamentos   from './admin/finance/Lancamentos';
-import ContasPagar   from './admin/finance/ContasPagar';
-import ContasReceber from './admin/finance/ContasReceber';
+import CaixaDiario      from './admin/finance/CaixaDiario';
+import Lancamentos      from './admin/finance/Lancamentos';
+import ContasPagar      from './admin/finance/ContasPagar';
+import ContasReceber    from './admin/finance/ContasReceber';
+import ContasBancarias  from './admin/finance/ContasBancarias';
 
-type FinanceTab = 'visao-geral' | 'caixa' | 'lancamentos' | 'contas-pagar' | 'contas-receber';
+type FinanceTab = 'visao-geral' | 'caixa' | 'lancamentos' | 'contas-pagar' | 'contas-receber' | 'contas-bancarias';
 
 interface Props { userRole: UserRole; patients: Patient[]; }
 type PeriodKey = 'mes' | 'trimestre' | 'ano' | 'custom';
 const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 const FINANCE_TABS: { id: FinanceTab; label: string; icon: React.ElementType }[] = [
-  { id: 'visao-geral',     label: 'Visão Geral',      icon: LayoutDashboard },
-  { id: 'caixa',          label: 'Caixa',             icon: DollarSign },
-  { id: 'lancamentos',    label: 'Lançamentos',        icon: BookOpen },
-  { id: 'contas-pagar',   label: 'Contas a Pagar',    icon: CreditCard },
-  { id: 'contas-receber', label: 'Contas a Receber',  icon: Receipt },
+  { id: 'visao-geral',       label: 'Visão Geral',       icon: LayoutDashboard },
+  { id: 'caixa',             label: 'Caixa',              icon: DollarSign },
+  { id: 'lancamentos',       label: 'Lançamentos',        icon: BookOpen },
+  { id: 'contas-pagar',      label: 'Contas a Pagar',    icon: CreditCard },
+  { id: 'contas-receber',    label: 'Contas a Receber',  icon: Receipt },
+  { id: 'contas-bancarias',  label: 'Contas Bancárias',  icon: BarChart3 },
 ];
 
 interface BillAlert { id: string; description: string; amount: number; due_date: string; status: string; }
@@ -152,10 +154,11 @@ const Finance: React.FC<Props> = ({ patients }) => {
       </div>
 
       {/* Sub-abas não-visão-geral */}
-      {financeTab === 'caixa'          && <CaixaDiario />}
-      {financeTab === 'lancamentos'    && <Lancamentos />}
-      {financeTab === 'contas-pagar'   && <ContasPagar />}
-      {financeTab === 'contas-receber' && <ContasReceber />}
+      {financeTab === 'caixa'             && <CaixaDiario />}
+      {financeTab === 'lancamentos'       && <Lancamentos />}
+      {financeTab === 'contas-pagar'      && <ContasPagar />}
+      {financeTab === 'contas-receber'    && <ContasReceber />}
+      {financeTab === 'contas-bancarias'  && <ContasBancarias />}
 
       {/* Visão Geral — conteúdo original */}
       {financeTab === 'visao-geral' && (
