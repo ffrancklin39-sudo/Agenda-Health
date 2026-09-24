@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Download, RefreshCw, Check, Trash2, AlertTriangle,
-  ChevronDown, ChevronUp, X, Save, Loader2, Calendar,
+  ChevronDown, X, Save, Loader2, Calendar,
+  ChevronLeft, ChevronRight, Tag, Settings2, CreditCard,
 } from 'lucide-react';
 import { supabase } from '../../../services/supabaseClient';
 
@@ -18,13 +19,22 @@ interface Bill {
   paid_at: string | null;
   status: string;
   recurrence: string;
+  payment_method: string | null;
+  bank_account: string | null;
   document_number: string | null;
   notes: string | null;
   boleto_url: string | null;
   created_at: string;
 }
 
-const CATEGORIES = [
+interface PayData {
+  amount_paid: number | '';
+  payment_method: string;
+  bank_account: string;
+  paid_at: string;
+}
+
+const DEFAULT_CATEGORIES = [
   { value: 'aluguel',      label: 'Aluguel' },
   { value: 'salario',      label: 'Salário' },
   { value: 'insumos',      label: 'Insumos' },
@@ -44,6 +54,23 @@ const RECURRENCES = [
   { value: 'yearly',    label: 'Anual' },
 ];
 
+const PAYMENT_METHODS = [
+  { value: 'pix',         label: 'PIX' },
+  { value: 'debit',       label: 'Débito' },
+  { value: 'cash',        label: 'Dinheiro' },
+  { value: 'transfer',    label: 'Transferência' },
+  { value: 'boleto',      label: 'Boleto' },
+  { value: 'credit_1x',  label: 'Crédito 1x' },
+  { value: 'credit_2_6x',label: 'Crédito 2–6x' },
+  { value: 'credit_7x_plus', label: 'Crédito 7x+' },
+  { value: 'check',       label: 'Cheque' },
+];
+
+const MONTHS_PT = [
+  'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
+];
+
 const STATUS_STYLE: Record<string, string> = {
   pending:   'bg-amber-50 text-amber-700 border-amber-200',
   paid:      'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -53,48 +80,253 @@ const STATUS_STYLE: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pendente', paid: 'Pago', overdue: 'Vencido', cancelled: 'Cancelado',
 };
-const CAT_LABEL: Record<string, string> = Object.fromEntries(CATEGORIES.map(c => [c.value, c.label]));
 
-const fmt    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmt     = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR');
+const monthLabel = (d: Date) => `${MONTHS_PT[d.getMonth()]} ${d.getFullYear()}`;
 
 const inputCls = `w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800
   bg-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition-all`;
 
 const blankBill = () => ({
-  description: '', category: 'outros', supplier: '', amount: 0,
+  description: '', category: 'outros', supplier: '', amount: '' as number | '',
   due_date: new Date().toISOString().slice(0, 10),
   recurrence: 'none', document_number: '', notes: '', boleto_url: '',
 });
 
-// ─── Modal de cadastro ────────────────────────────────────────
+// ─── Modal: Registrar Pagamento ───────────────────────────────
+
+interface PayBillModalProps {
+  bill: Bill;
+  onPay: (data: PayData) => void;
+  onClose: () => void;
+  saving: boolean;
+}
+
+const PayBillModal: React.FC<PayBillModalProps> = ({ bill, onPay, onClose, saving }) => {
+  const [data, setData] = useState<PayData>({
+    amount_paid: bill.amount,
+    payment_method: 'pix',
+    bank_account: '',
+    paid_at: new Date().toISOString().slice(0, 10),
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (k: keyof PayData, v: any) => setData(d => ({ ...d, [k]: v }));
+
+  const handlePay = () => {
+    if (!data.amount_paid || Number(data.amount_paid) <= 0) {
+      setError('Informe o valor pago.'); return;
+    }
+    setError(null);
+    onPay(data);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-bold text-slate-800">Registrar pagamento</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Info da conta */}
+        <div className="mx-5 mt-4 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+          <p className="text-sm font-semibold text-slate-700 truncate">{bill.description}</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Vencimento: {fmtDate(bill.due_date)} · Valor original: <span className="font-semibold text-slate-600">{fmt(bill.amount)}</span>
+          </p>
+          {bill.supplier && <p className="text-xs text-slate-400">{bill.supplier}</p>}
+        </div>
+
+        <div className="p-5 grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Valor pago (R$) *</label>
+            <input
+              type="number" min={0} step={0.01}
+              className={inputCls}
+              value={data.amount_paid}
+              onChange={e => set('amount_paid', e.target.value === '' ? '' : parseFloat(e.target.value))}
+              onFocus={e => { if (data.amount_paid === 0) set('amount_paid', ''); }}
+              placeholder="0,00"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Data do pagamento</label>
+            <input
+              type="date" className={inputCls}
+              value={data.paid_at}
+              onChange={e => set('paid_at', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Forma de pagamento</label>
+            <select className={inputCls} value={data.payment_method} onChange={e => set('payment_method', e.target.value)}>
+              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Conta / Origem</label>
+            <input
+              className={inputCls}
+              value={data.bank_account}
+              onChange={e => set('bank_account', e.target.value)}
+              placeholder="Ex: Nubank, Caixa Pequeno..."
+            />
+          </div>
+
+          {error && (
+            <div className="col-span-2 flex items-center gap-2 text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{error}
+            </div>
+          )}
+
+          <button onClick={onClose}
+            className="py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handlePay} disabled={saving}
+            className="flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 rounded-xl transition-colors">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {saving ? 'Salvando...' : 'Confirmar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Modal: Gerenciar Categorias ──────────────────────────────
+
+interface CategoryManagerProps {
+  categories: { value: string; label: string }[];
+  onSave: (cats: { value: string; label: string }[]) => void;
+  onClose: () => void;
+}
+
+const CategoryManager: React.FC<CategoryManagerProps> = ({ categories, onSave, onClose }) => {
+  const [cats, setCats] = useState(categories);
+  const [newLabel, setNewLabel] = useState('');
+  const [err, setErr] = useState('');
+
+  const addCat = () => {
+    const label = newLabel.trim();
+    if (!label) { setErr('Informe o nome.'); return; }
+    const value = label.toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    if (cats.find(c => c.value === value)) { setErr('Categoria já existe.'); return; }
+    setCats(prev => [...prev, { value, label }]);
+    setNewLabel(''); setErr('');
+  };
+
+  const removeCat = (value: string) => {
+    if (DEFAULT_CATEGORIES.find(c => c.value === value)) return; // padrões não deletam
+    setCats(prev => prev.filter(c => c.value !== value));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Tag className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-bold text-slate-800">Gerenciar categorias</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          {/* Lista de categorias */}
+          <div className="space-y-1 mb-4 max-h-64 overflow-y-auto">
+            {cats.map(c => {
+              const isDefault = !!DEFAULT_CATEGORIES.find(d => d.value === c.value);
+              return (
+                <div key={c.value} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <span className="text-sm text-slate-700">{c.label}</span>
+                  {isDefault ? (
+                    <span className="text-[10px] text-slate-400 font-semibold">padrão</span>
+                  ) : (
+                    <button onClick={() => removeCat(c.value)}
+                      className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Adicionar nova */}
+          <div className="flex gap-2">
+            <input
+              className={inputCls + ' flex-1'}
+              value={newLabel}
+              onChange={e => { setNewLabel(e.target.value); setErr(''); }}
+              onKeyDown={e => e.key === 'Enter' && addCat()}
+              placeholder="Nova categoria..."
+            />
+            <button onClick={addCat}
+              className="px-3 py-2.5 text-sm font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors">
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+          {err && <p className="text-xs text-rose-500 mt-1.5">{err}</p>}
+
+          <div className="flex gap-2 mt-4">
+            <button onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+              Cancelar
+            </button>
+            <button onClick={() => onSave(cats)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors">
+              <Save className="w-4 h-4" /> Salvar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Modal de cadastro de conta ────────────────────────────────
 
 interface BillFormProps {
   initial?: Partial<Bill>;
+  allCategories: { value: string; label: string }[];
   onSave: () => void;
   onClose: () => void;
 }
-const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
-  const [form, setForm] = useState({ ...blankBill(), ...initial });
+
+const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onClose }) => {
+  const [form, setForm] = useState<any>({ ...blankBill(), ...initial, amount: initial?.amount ?? '' });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
-  const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
     if (!form.description) { setError('Informe a descrição.'); return; }
-    if (!form.amount || form.amount <= 0) { setError('Informe o valor.'); return; }
+    const amt = parseFloat(String(form.amount));
+    if (!amt || amt <= 0) { setError('Informe o valor.'); return; }
     setSaving(true); setError(null);
     const payload = {
       description:     form.description,
       category:        form.category,
       supplier:        form.supplier || null,
-      amount:          form.amount,
+      amount:          amt,
       due_date:        form.due_date,
       recurrence:      form.recurrence,
       document_number: form.document_number || null,
       notes:           form.notes || null,
-      boleto_url:      (form as any).boleto_url || null,
+      boleto_url:      form.boleto_url || null,
     };
     const { error: err } = initial?.id
       ? await supabase.from('bills').update(payload).eq('id', initial.id)
@@ -105,11 +337,13 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
   };
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="modal-card bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <h2 className="text-sm font-bold text-slate-800">{initial?.id ? 'Editar conta' : 'Nova conta a pagar'}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
         </div>
         <div className="p-5 grid grid-cols-2 gap-4">
           <div className="col-span-2">
@@ -119,12 +353,19 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Categoria</label>
             <select className={inputCls} value={form.category} onChange={e => set('category', e.target.value)}>
-              {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              {allCategories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Valor (R$) *</label>
-            <input type="number" min={0} step={0.01} className={inputCls} value={form.amount} onChange={e => set('amount', parseFloat(e.target.value) || 0)} />
+            <input
+              type="number" min={0} step={0.01}
+              className={inputCls}
+              value={form.amount}
+              onChange={e => set('amount', e.target.value)}
+              onFocus={e => { if (form.amount === 0 || form.amount === '0') set('amount', ''); }}
+              placeholder="0,00"
+            />
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Vencimento *</label>
@@ -146,7 +387,7 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
           </div>
           <div className="col-span-2">
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Link do Boleto</label>
-            <input className={inputCls} value={(form as any).boleto_url ?? ''} onChange={e => set('boleto_url', e.target.value)} placeholder="https://..." />
+            <input className={inputCls} value={form.boleto_url ?? ''} onChange={e => set('boleto_url', e.target.value)} placeholder="https://..." />
             <p className="text-[10px] text-slate-400 mt-1">Será enviado no lembrete WhatsApp junto com os dados da conta.</p>
           </div>
           <div className="col-span-2">
@@ -160,9 +401,9 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
             </div>
           )}
 
-          <button onClick={onClose} className="col-span-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
+          <button onClick={onClose} className="py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
-            className="col-span-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 rounded-xl transition-colors">
+            className="flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 rounded-xl transition-colors">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
@@ -175,18 +416,28 @@ const BillForm: React.FC<BillFormProps> = ({ initial, onSave, onClose }) => {
 // ─── Componente principal ─────────────────────────────────────
 
 type FilterStatus = 'all' | 'pending' | 'overdue' | 'paid';
-type PeriodKey    = 'mes' | 'trimestre' | 'ano' | 'all';
 
 const ContasPagar: React.FC = () => {
-  const [bills, setBills]       = useState<Bill[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editBill, setEditBill] = useState<Bill | null>(null);
-  const [status, setStatus]     = useState<FilterStatus>('all');
-  const [period, setPeriod]     = useState<PeriodKey>('mes');
-  const [catFilter, setCatFilter] = useState('all');
-  const [marking, setMarking]   = useState<string | null>(null);
+  const [bills, setBills]               = useState<Bill[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [showForm, setShowForm]         = useState(false);
+  const [editBill, setEditBill]         = useState<Bill | null>(null);
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
+  const [catFilter, setCatFilter]       = useState('all');
+  const [viewMonth, setViewMonth]       = useState<Date | null>(new Date());
+  const [payingBill, setPayingBill]     = useState<Bill | null>(null);
+  const [marking, setMarking]           = useState<string | null>(null);
+  const [showCatManager, setShowCatManager] = useState(false);
+  const [extraCategories, setExtraCategories] = useState<{ value: string; label: string }[]>([]);
 
+  const allCategories = useMemo(() => [
+    ...DEFAULT_CATEGORIES,
+    ...extraCategories.filter(c => !DEFAULT_CATEGORIES.find(d => d.value === c.value)),
+  ], [extraCategories]);
+
+  const catLabel = useMemo(() => Object.fromEntries(allCategories.map(c => [c.value, c.label])), [allCategories]);
+
+  // Carrega contas
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('bills').select('*').order('due_date', { ascending: true });
@@ -194,28 +445,41 @@ const ContasPagar: React.FC = () => {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Carrega categorias customizadas
+  const loadCategories = useCallback(async () => {
+    const { data } = await supabase
+      .from('clinic_settings').select('value').eq('key', 'bill_categories').maybeSingle();
+    if (data?.value && Array.isArray(data.value)) {
+      setExtraCategories(data.value as { value: string; label: string }[]);
+    }
+  }, []);
 
-  const now = new Date();
+  useEffect(() => { load(); loadCategories(); }, [load, loadCategories]);
+
+  // Navegação de mês
+  const goPrev = () => setViewMonth(prev => {
+    const d = prev ? new Date(prev) : new Date();
+    d.setMonth(d.getMonth() - 1); return new Date(d);
+  });
+  const goNext = () => setViewMonth(prev => {
+    const d = prev ? new Date(prev) : new Date();
+    d.setMonth(d.getMonth() + 1); return new Date(d);
+  });
+
+  // Filtragem
   const filtered = useMemo(() => {
     return bills.filter(b => {
-      // Status
-      if (status === 'overdue' && b.status !== 'overdue') return false;
-      if (status === 'pending' && b.status !== 'pending') return false;
-      if (status === 'paid'    && b.status !== 'paid')    return false;
-      // Categoria
+      if (statusFilter !== 'all') {
+        if (b.status !== statusFilter) return false;
+      }
       if (catFilter !== 'all' && b.category !== catFilter) return false;
-      // Período
-      if (period !== 'all') {
+      if (viewMonth !== null) {
         const d = new Date(b.due_date + 'T00:00:00');
-        const y = now.getFullYear(), m = now.getMonth();
-        if (period === 'mes'       && !(d.getFullYear() === y && d.getMonth() === m)) return false;
-        if (period === 'trimestre' && !(d >= new Date(y, m-2, 1) && d <= new Date(y, m+1, 0))) return false;
-        if (period === 'ano'       && d.getFullYear() !== y) return false;
+        if (d.getFullYear() !== viewMonth.getFullYear() || d.getMonth() !== viewMonth.getMonth()) return false;
       }
       return true;
     });
-  }, [bills, status, period, catFilter]);
+  }, [bills, statusFilter, catFilter, viewMonth]);
 
   const totals = useMemo(() => ({
     pending: filtered.filter(b => b.status === 'pending').reduce((s, b) => s + b.amount, 0),
@@ -223,11 +487,20 @@ const ContasPagar: React.FC = () => {
     paid:    filtered.filter(b => b.status === 'paid').reduce((s, b) => s + (b.amount_paid ?? b.amount), 0),
   }), [filtered]);
 
-  const markPaid = async (bill: Bill) => {
-    setMarking(bill.id);
-    await supabase.from('bills').update({ status: 'paid', amount_paid: bill.amount, paid_at: new Date().toISOString() }).eq('id', bill.id);
-    await load();
+  // Pagamento via modal
+  const confirmPay = async (data: PayData) => {
+    if (!payingBill) return;
+    setMarking(payingBill.id);
+    await supabase.from('bills').update({
+      status:         'paid',
+      amount_paid:    Number(data.amount_paid),
+      payment_method: data.payment_method,
+      bank_account:   data.bank_account || null,
+      paid_at:        new Date(data.paid_at + 'T12:00:00').toISOString(),
+    }).eq('id', payingBill.id);
+    setPayingBill(null);
     setMarking(null);
+    await load();
   };
 
   const deleteBill = async (id: string) => {
@@ -236,11 +509,26 @@ const ContasPagar: React.FC = () => {
     setBills(prev => prev.filter(b => b.id !== id));
   };
 
+  const saveCategories = async (cats: { value: string; label: string }[]) => {
+    const extra = cats.filter(c => !DEFAULT_CATEGORIES.find(d => d.value === c.value));
+    setExtraCategories(extra);
+    await supabase.from('clinic_settings').upsert(
+      { key: 'bill_categories', value: extra },
+      { onConflict: 'key' },
+    );
+    setShowCatManager(false);
+  };
+
   const handleExport = () => {
     const rows = [
       ['Contas a Pagar — SintesIA'], [],
-      ['Descrição', 'Categoria', 'Fornecedor', 'Valor (R$)', 'Vencimento', 'Status', 'Recorrência'],
-      ...filtered.map(b => [b.description, CAT_LABEL[b.category] ?? b.category, b.supplier ?? '—', b.amount.toFixed(2), fmtDate(b.due_date), STATUS_LABEL[b.status] ?? b.status, b.recurrence]),
+      ['Descrição', 'Categoria', 'Fornecedor', 'Valor (R$)', 'Vencimento', 'Status', 'Recorrência', 'Conta Pagamento'],
+      ...filtered.map(b => [
+        b.description, catLabel[b.category] ?? b.category,
+        b.supplier ?? '—', b.amount.toFixed(2),
+        fmtDate(b.due_date), STATUS_LABEL[b.status] ?? b.status,
+        b.recurrence, b.bank_account ?? '—',
+      ]),
     ];
     const csv = rows.map(r => r.join(';')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
@@ -250,13 +538,15 @@ const ContasPagar: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5">
+
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1">
           <h2 className="text-base font-bold text-slate-800">Contas a Pagar</h2>
           <p className="text-xs text-slate-400">{filtered.length} lançamento{filtered.length !== 1 ? 's' : ''}</p>
         </div>
-        <button onClick={handleExport} className="flex items-center gap-2 text-xs font-semibold text-slate-600 border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 rounded-xl px-3 py-2 transition-colors">
+        <button onClick={handleExport}
+          className="flex items-center gap-2 text-xs font-semibold text-slate-600 border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 rounded-xl px-3 py-2 transition-colors">
           <Download className="w-3.5 h-3.5" /> CSV
         </button>
         <button onClick={() => { setEditBill(null); setShowForm(true); }}
@@ -281,31 +571,66 @@ const ContasPagar: React.FC = () => {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {(['all','pending','overdue','paid'] as FilterStatus[]).map(s => (
-          <button key={s} onClick={() => setStatus(s)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${status === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
-            {{ all: 'Todos', pending: 'Pendentes', overdue: 'Vencidos', paid: 'Pagos' }[s]}
+      {/* Navegação mês + Filtros */}
+      <div className="flex flex-col gap-2">
+        {/* Linha 1: navegação de mês */}
+        <div className="flex items-center gap-2">
+          <button onClick={goPrev}
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+            <ChevronLeft className="w-4 h-4" />
           </button>
-        ))}
-        <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-          className="text-xs border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-indigo-400 bg-white text-slate-600">
-          <option value="all">Todas categorias</option>
-          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <select value={period} onChange={e => setPeriod(e.target.value as PeriodKey)}
-          className="text-xs border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-indigo-400 bg-white text-slate-600">
-          <option value="mes">Mês atual</option>
-          <option value="trimestre">Trimestre</option>
-          <option value="ano">Ano</option>
-          <option value="all">Todos</option>
-        </select>
+          <div className="flex-1 text-center">
+            <span className="text-sm font-semibold text-slate-700">
+              {viewMonth ? monthLabel(viewMonth) : 'Todos os períodos'}
+            </span>
+          </div>
+          <button onClick={goNext}
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setViewMonth(viewMonth ? null : new Date())}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+              !viewMonth
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+            }`}>
+            Todos
+          </button>
+        </div>
+
+        {/* Linha 2: filtros status + categoria */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {(['all','pending','overdue','paid'] as FilterStatus[]).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}>
+              {{ all: 'Todos', pending: 'Pendentes', overdue: 'Vencidos', paid: 'Pagos' }[s]}
+            </button>
+          ))}
+          <div className="flex items-center gap-1 ml-auto">
+            <select
+              value={catFilter} onChange={e => setCatFilter(e.target.value)}
+              className="text-xs border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-indigo-400 bg-white text-slate-600">
+              <option value="all">Todas categorias</option>
+              {allCategories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            <button
+              onClick={() => setShowCatManager(true)}
+              title="Gerenciar categorias"
+              className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-500 transition-colors">
+              <Settings2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Lista */}
       {loading ? (
-        <div className="flex justify-center py-16"><RefreshCw className="w-5 h-5 text-indigo-400 animate-spin" /></div>
+        <div className="flex justify-center py-16">
+          <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin" />
+        </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center py-16 gap-3">
           <Calendar className="w-10 h-10 text-slate-200" />
@@ -318,25 +643,52 @@ const ContasPagar: React.FC = () => {
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="grid grid-cols-[1fr_100px_100px_90px_110px] gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-            <span>Descrição</span><span className="text-right">Valor</span><span className="text-center">Vencimento</span><span className="text-center">Status</span><span className="text-right">Ações</span>
+            <span>Descrição</span>
+            <span className="text-right">Valor</span>
+            <span className="text-center">Vencimento</span>
+            <span className="text-center">Status</span>
+            <span className="text-right">Ações</span>
           </div>
           <div className="divide-y divide-slate-50">
             {filtered.map(b => (
               <div key={b.id} className="grid grid-cols-[1fr_100px_100px_90px_110px] gap-2 px-4 py-3 hover:bg-slate-50 transition-colors items-center">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-700 truncate">{b.description}</p>
-                  <p className="text-[10px] text-slate-400">{CAT_LABEL[b.category] ?? b.category}{b.supplier ? ` · ${b.supplier}` : ''}{b.recurrence !== 'none' ? ` · ${RECURRENCES.find(r=>r.value===b.recurrence)?.label}` : ''}</p>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <p className="text-[10px] text-slate-400">
+                      {catLabel[b.category] ?? b.category}
+                      {b.supplier ? ` · ${b.supplier}` : ''}
+                      {b.recurrence !== 'none' ? ` · ${RECURRENCES.find(r => r.value === b.recurrence)?.label}` : ''}
+                    </p>
+                    {b.status === 'paid' && b.bank_account && (
+                      <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-1.5 py-0.5">
+                        {b.bank_account}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <span className="text-sm font-semibold text-slate-700 tabular-nums text-right">{fmt(b.amount)}</span>
-                <span className={`text-xs tabular-nums text-center ${b.status === 'overdue' ? 'text-rose-500 font-semibold' : 'text-slate-500'}`}>{fmtDate(b.due_date)}</span>
+                <div className="text-right">
+                  <span className="text-sm font-semibold text-slate-700 tabular-nums">{fmt(b.amount)}</span>
+                  {b.amount_paid != null && b.amount_paid !== b.amount && (
+                    <p className="text-[10px] text-emerald-600">pago: {fmt(b.amount_paid)}</p>
+                  )}
+                </div>
+                <span className={`text-xs tabular-nums text-center ${b.status === 'overdue' ? 'text-rose-500 font-semibold' : 'text-slate-500'}`}>
+                  {fmtDate(b.due_date)}
+                </span>
                 <span className={`text-[10px] font-bold border rounded-full px-2 py-0.5 text-center ${STATUS_STYLE[b.status] ?? STATUS_STYLE.pending}`}>
                   {STATUS_LABEL[b.status] ?? b.status}
                 </span>
                 <div className="flex items-center justify-end gap-1">
                   {b.status !== 'paid' && (
-                    <button onClick={() => markPaid(b)} disabled={marking === b.id} title="Marcar como pago"
+                    <button
+                      onClick={() => setPayingBill(b)}
+                      disabled={marking === b.id}
+                      title="Registrar pagamento"
                       className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors disabled:opacity-50">
-                      {marking === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      {marking === b.id
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Check className="w-3.5 h-3.5" />}
                     </button>
                   )}
                   <button onClick={() => { setEditBill(b); setShowForm(true); }} title="Editar"
@@ -354,12 +706,32 @@ const ContasPagar: React.FC = () => {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal: cadastro/edição */}
       {showForm && (
         <BillForm
           initial={editBill ?? undefined}
+          allCategories={allCategories}
           onSave={() => { setShowForm(false); setEditBill(null); load(); }}
           onClose={() => { setShowForm(false); setEditBill(null); }}
+        />
+      )}
+
+      {/* Modal: registrar pagamento */}
+      {payingBill && (
+        <PayBillModal
+          bill={payingBill}
+          saving={marking === payingBill.id}
+          onPay={confirmPay}
+          onClose={() => setPayingBill(null)}
+        />
+      )}
+
+      {/* Modal: gerenciar categorias */}
+      {showCatManager && (
+        <CategoryManager
+          categories={allCategories}
+          onSave={saveCategories}
+          onClose={() => setShowCatManager(false)}
         />
       )}
     </div>
