@@ -4,6 +4,7 @@ import {
   ChevronDown, X, Save, Loader2, Calendar,
   ChevronLeft, ChevronRight, Tag, Settings2, CreditCard,
 } from 'lucide-react';
+import CurrencyInput from 'react-currency-input-field';
 import { supabase } from '../../../services/supabaseClient';
 
 // ─── Tipos ────────────────────────────────────────────────────
@@ -86,9 +87,19 @@ const fmt      = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', c
 const fmtDate  = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR');
 const monthLabel = (d: Date) => `${MONTHS_PT[d.getMonth()]} ${d.getFullYear()}`;
 
-/** Converte entrada do usuário (com vírgula ou ponto) para float */
-const parseAmt = (v: string | number): number =>
-  parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0;
+/** Converte entrada do usuário para float.
+ *  - Formato BR com vírgula (38,90 / 1.234,56): remove pontos, troca vírgula por ponto
+ *  - Número já em formato inglês vindo do DB (38.9 / 1234.56): parseFloat direto
+ */
+const parseAmt = (v: string | number): number => {
+  const s = String(v).trim().replace(/R\$\s?/g, '').replace(/\s/g, '');
+  if (s.includes(',')) {
+    // Formato BR: 1.234,56 → remove separador de milhar, troca decimal
+    return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
+  }
+  // Já é número (38.9) ou inteiro (389) — não tocar nos pontos
+  return parseFloat(s) || 0;
+};
 
 /** Adiciona N períodos a uma data ISO (YYYY-MM-DD) */
 function addPeriods(dateStr: string, recurrence: string, n: number): string {
@@ -163,13 +174,15 @@ const PayBillModal: React.FC<PayBillModalProps> = ({ bill, onPay, onClose, savin
         <div className="p-5 grid grid-cols-2 gap-4">
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Valor pago (R$) *</label>
-            <input
-              type="text" inputMode="decimal"
+            <CurrencyInput
               className={inputCls}
-              value={data.amount_paid}
-              onChange={e => set('amount_paid', e.target.value)}
-              onFocus={() => { if (!data.amount_paid || data.amount_paid === 0) set('amount_paid', ''); }}
-              placeholder="0,00"
+              prefix="R$ "
+              decimalSeparator=","
+              groupSeparator="."
+              decimalsLimit={2}
+              defaultValue={Number(data.amount_paid) || undefined}
+              onValueChange={val => set('amount_paid', val ?? '')}
+              placeholder="R$ 0,00"
             />
           </div>
           <div>
@@ -406,13 +419,15 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Valor (R$) *</label>
-            <input
-              type="text" inputMode="decimal"
+            <CurrencyInput
               className={inputCls}
-              value={form.amount}
-              onChange={e => set('amount', e.target.value)}
-              onFocus={e => { if (!form.amount || form.amount === '0') set('amount', ''); }}
-              placeholder="0,00"
+              prefix="R$ "
+              decimalSeparator=","
+              groupSeparator="."
+              decimalsLimit={2}
+              defaultValue={form.amount ? Number(String(form.amount).replace(',', '.')) || undefined : undefined}
+              onValueChange={val => set('amount', val ?? '')}
+              placeholder="R$ 0,00"
             />
           </div>
           <div>
