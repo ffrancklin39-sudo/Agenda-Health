@@ -619,25 +619,14 @@ const ContasPagar: React.FC = () => {
   const saveCategories = async (cats: { value: string; label: string }[]) => {
     const extra = cats.filter(c => !DEFAULT_CATEGORIES.find(d => d.value === c.value));
 
-    // Tenta INSERT primeiro, depois UPDATE se já existir
-    const { error: upsertErr } = await supabase
-      .from('clinic_settings')
-      .upsert({ key: 'bill_categories', value: JSON.stringify(extra) }, { onConflict: 'key' });
-
-    if (upsertErr) {
-      // Fallback: UPDATE direto caso upsert falhe por RLS
-      const { error: updateErr } = await supabase
-        .from('clinic_settings')
-        .update({ value: JSON.stringify(extra) })
-        .eq('key', 'bill_categories');
-      if (updateErr) {
-        console.error('saveCategories error:', updateErr.message);
-        alert('Erro ao salvar categorias: ' + updateErr.message);
-        return;
-      }
+    // Usa função SECURITY DEFINER para ignorar RLS no upsert
+    const { error } = await supabase.rpc('save_bill_categories', { p_categories: extra });
+    if (error) {
+      console.error('saveCategories RPC error:', error.message);
+      alert('Erro ao salvar categorias: ' + error.message);
+      return;
     }
 
-    // Persiste no estado local mesmo se houve fallback
     setExtraCategories(extra);
     setShowCatManager(false);
   };
