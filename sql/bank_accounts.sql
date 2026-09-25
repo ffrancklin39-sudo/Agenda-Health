@@ -5,6 +5,12 @@
 
 
 -- ------------------------------------------------------------
+-- 0. PRÉ-REQUISITO: bank_account em payments (pode não existir)
+-- ------------------------------------------------------------
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS bank_account TEXT;
+
+
+-- ------------------------------------------------------------
 -- 1. TABELA: bank_accounts
 --    Cadastro de contas bancárias / caixas da clínica
 -- ------------------------------------------------------------
