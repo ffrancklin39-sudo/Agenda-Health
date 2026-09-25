@@ -18,6 +18,7 @@ import PaymentRegisterModal from './admin/PaymentRegisterModal';
 import AnamnesisTab from './AnamnesisTab';
 import PrescriptionsTab from './PrescriptionsTab';
 import LaudosTab from './LaudosTab';
+import HistoricoFeegowTab from './HistoricoFeegowTab';
 
 /* -------------------------------------------------
    Tipos auxiliares
@@ -28,6 +29,7 @@ type SideTab =
   | 'ia'
   | 'laudos'
   | 'prescricoes'
+  | 'historico-feegow'
   | 'agendamentos'
   | 'arquivos'
   | 'timeline'
@@ -102,7 +104,8 @@ const NAV_ITEMS: { id: SideTab; label: string; icon: React.ElementType; badge?: 
   { id: 'ia',           label: 'Resumos de IA',        icon: Brain,       badge: 'NOVO' },
   { id: 'anamnese',     label: 'Anamnese e Evolucoes', icon: Activity     },
   { id: 'laudos',       label: 'Laudos e Formularios', icon: FileText     },
-  { id: 'prescricoes',  label: 'Prescricoes',          icon: Pill         },
+  { id: 'prescricoes',     label: 'Prescricoes',          icon: Pill         },
+  { id: 'historico-feegow', label: 'Histórico Clínico',  icon: ClipboardList },
   { id: 'agendamentos', label: 'Agendamentos',         icon: Calendar     },
   { id: 'arquivos',     label: 'Arquivos',             icon: Paperclip    },
   { id: 'timeline',     label: 'Linha do Tempo',       icon: Clock        },
@@ -865,6 +868,11 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
             <div className="flex flex-col px-6 py-5" style={{ height: 'calc(100vh - 120px)' }}>
               <PrescriptionsTab patientId={patient.id} />
             </div>
+          )}
+
+          {/* HISTÓRICO CLÍNICO — Feegow */}
+          {activeTab === 'historico-feegow' && patient?.id && patient.id !== 'NEW' && (
+            <HistoricoFeegowTab patientId={patient.id} />
           )}
 
           {/* AGENDAMENTOS */}
