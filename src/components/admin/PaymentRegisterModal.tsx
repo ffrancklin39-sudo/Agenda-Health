@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import CurrencyInput from 'react-currency-input-field';
 import {
-  X, DollarSign, CreditCard, CheckCircle2, AlertCircle,
-  Loader2, Receipt, ChevronDown,
+  X, DollarSign, CheckCircle2, AlertCircle,
+  Loader2, Receipt, Landmark,
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import {
@@ -65,10 +66,21 @@ interface Props {
   onSuccess: () => void;
 }
 
+interface BankAccountOption { id: string; name: string; color: string; }
+
 const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) => {
-  const [amount, setAmount]         = useState<number>(patient.price ?? 0);
+  const [amountStr, setAmountStr]   = useState<string>(String(patient.price ?? ''));
+  const amount = useMemo(() => {
+    const s = String(amountStr).trim().replace(/R\$\s?/g,'').replace(/\s/g,'');
+    if (!s) return 0;
+    if (s.includes(',')) return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0;
+    return parseFloat(s) || 0;
+  }, [amountStr]);
+
   const [method, setMethod]         = useState<PaymentMethodFull>('pix');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 16));
+  const [bankAccount, setBankAccount] = useState('');
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([]);
   const [notes, setNotes]           = useState('');
   const [pricing, setPricing]       = useState<PricingRow | null>(null);
   const [saving, setSaving]           = useState(false);
@@ -76,17 +88,24 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
   const [error, setError]             = useState<string | null>(null);
   const [dupWarning, setDupWarning]   = useState<string | null>(null);
 
-  // Carrega precificação do serviço do paciente
+  // Carrega precificação e contas bancárias
   useEffect(() => {
     const serviceId = patient.service_id ?? patient.serviceId;
-    if (!serviceId) return;
+    if (serviceId) {
+      supabase
+        .from('procedures_pricing')
+        .select('*')
+        .eq('service_id', serviceId)
+        .eq('active', true)
+        .single()
+        .then(({ data }) => { if (data) setPricing(data as PricingRow); });
+    }
     supabase
-      .from('procedures_pricing')
-      .select('*')
-      .eq('service_id', serviceId)
-      .eq('active', true)
-      .single()
-      .then(({ data }) => { if (data) setPricing(data as PricingRow); });
+      .from('bank_accounts')
+      .select('id, name, color')
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }) => { if (data) setBankAccounts(data as BankAccountOption[]); });
   }, [patient]);
 
   // Preview calculado no front (mesmo algoritmo do trigger)
@@ -131,6 +150,7 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
       payment_method:  method,
       status:          'paid',
       payment_date:    new Date(paymentDate).toISOString(),
+      bank_account:    bankAccount || null,
       notes:           notes || null,
     });
 
@@ -193,18 +213,17 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
           {/* Valor */}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-slate-500">Valor recebido</label>
-            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-400/20 transition-all overflow-hidden">
-              <span className="px-3 text-slate-400 text-sm border-r border-slate-200 py-3 bg-slate-100">R$</span>
-              <input
-                type="number"
-                value={amount}
-                min={0}
-                step={0.01}
-                onChange={e => setAmount(parseFloat(e.target.value) || 0)}
-                className="flex-1 bg-transparent px-3 py-3 text-base font-semibold text-slate-800 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              />
-            </div>
-            {patient.price && patient.price !== amount && (
+            <CurrencyInput
+              prefix="R$ "
+              decimalSeparator=","
+              groupSeparator="."
+              decimalsLimit={2}
+              defaultValue={patient.price ?? undefined}
+              onValueChange={val => setAmountStr(val ?? '')}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all bg-slate-50"
+              placeholder="R$ 0,00"
+            />
+            {patient.price && patient.price !== amount && amount > 0 && (
               <p className="text-xs text-amber-600">
                 Valor tabelado: {fmt(patient.price)} — você alterou o valor cobrado.
               </p>
@@ -230,6 +249,49 @@ const PaymentRegisterModal: React.FC<Props> = ({ patient, onClose, onSuccess }) 
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Conta bancária */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-500 flex items-center gap-1">
+              <Landmark className="w-3 h-3" /> Conta bancária (opcional)
+            </label>
+            {bankAccounts.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Nenhuma conta cadastrada — configure em Financeiro → Contas Bancárias.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBankAccount('')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+                    bankAccount === ''
+                      ? 'bg-slate-200 border-slate-400 text-slate-700'
+                      : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  Não informar
+                </button>
+                {bankAccounts.map(acc => (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => setBankAccount(acc.name)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+                      bankAccount === acc.name
+                        ? 'border-transparent text-white'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                    style={bankAccount === acc.name ? { backgroundColor: acc.color } : {}}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: bankAccount === acc.name ? 'rgba(255,255,255,0.6)' : acc.color }}
+                    />
+                    {acc.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Data */}
