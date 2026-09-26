@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  User, Briefcase, Building2, Shield, Clock,
+  User, Briefcase, Building2, Shield, Clock, Lock,
   Plus, Pencil, Trash2, Check, X, Loader2, CheckCircle2, AlertCircle,
   Wallet, Search, ToggleLeft, ToggleRight,
 } from 'lucide-react';
@@ -48,6 +48,79 @@ const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'Administrador(a)',
   DOCTOR: 'Profissional',
   RECEPTIONIST: 'Recepção',
+};
+
+// ─── Card: Alterar Senha ──────────────────────────────────────────────────────
+
+const ChangePasswordCard: React.FC = () => {
+  const [newPass, setNewPass]     = useState('');
+  const [confirm, setConfirm]     = useState('');
+  const [showPass, setShowPass]   = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [msg, setMsg]             = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg(null);
+    if (newPass.length < 6) { setMsg({ type: 'err', text: 'A senha deve ter pelo menos 6 caracteres.' }); return; }
+    if (newPass !== confirm)  { setMsg({ type: 'err', text: 'As senhas não coincidem.' }); return; }
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({ password: newPass });
+    setSaving(false);
+    if (error) { setMsg({ type: 'err', text: 'Erro ao salvar: ' + error.message }); return; }
+    setMsg({ type: 'ok', text: 'Senha alterada com sucesso!' });
+    setNewPass(''); setConfirm('');
+  };
+
+  return (
+    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+      <p className="text-sm font-black text-slate-800 mb-4">Alterar Senha</p>
+      <form onSubmit={handleSave} className="space-y-3">
+        {msg && (
+          <div className={`text-xs font-semibold px-3 py-2 rounded-xl ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>
+            {msg.text}
+          </div>
+        )}
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type={showPass ? 'text' : 'password'}
+            value={newPass}
+            onChange={e => setNewPass(e.target.value)}
+            placeholder="Nova senha (mín. 6 caracteres)"
+            className="w-full pl-9 pr-10 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+          <button type="button" onClick={() => setShowPass(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            {showPass ? <X className="w-4 h-4" /> : <Check className="w-4 h-4 opacity-0" />}
+          </button>
+        </div>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type={showPass ? 'text' : 'password'}
+            value={confirm}
+            onChange={e => setConfirm(e.target.value)}
+            placeholder="Confirmar nova senha"
+            className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer select-none">
+            <input type="checkbox" checked={showPass} onChange={() => setShowPass(s => !s)} className="rounded" />
+            Mostrar senha
+          </label>
+          <button
+            type="submit"
+            disabled={saving || !newPass || !confirm}
+            className="ml-auto flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Salvar senha
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 };
 
 // ─── Aba de Permissões ────────────────────────────────────────────────────────
@@ -1031,6 +1104,9 @@ const Settings: React.FC<Props> = ({
                 ADMIN tem acesso total. DOCTOR e RECEPTIONIST veem só as abas operacionais (Dashboard, Agenda, Pacientes, Tarefas — CRMi é só ADMIN/RECEPTIONIST). Financeiro, BI, Relatórios e Configurações são exclusivos de ADMIN.
               </div>
             </div>
+
+            {/* Alterar senha */}
+            <ChangePasswordCard />
 
             <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
