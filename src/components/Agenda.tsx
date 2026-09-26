@@ -2748,7 +2748,7 @@ const Agenda: React.FC<Props> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh] custom-scrollbar">
               <div>
                 <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Profissional *</label>
                 <select className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white appearance-none"
