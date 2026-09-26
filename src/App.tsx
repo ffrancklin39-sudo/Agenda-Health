@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [agendaRefreshTrigger, setAgendaRefreshTrigger] = useState(0);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
+  const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({});
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<ClinicService[]>([]);
@@ -67,7 +68,7 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Busca role do usuário na tabela profiles
+  // Busca role do usuário + permissões dinâmicas da tabela role_permissions
   useEffect(() => {
     if (!session) return;
     supabase
@@ -76,7 +77,20 @@ const App: React.FC = () => {
       .eq('id', session.user.id)
       .single()
       .then(({ data }) => {
-        if (data?.role) setUserRole(data.role as UserRole);
+        const role = (data?.role as UserRole) || 'RECEPTIONIST';
+        if (data?.role) setUserRole(role);
+        // Carrega permissões do papel deste usuário
+        supabase
+          .from('role_permissions')
+          .select('module, enabled')
+          .eq('role', role)
+          .then(({ data: perms }) => {
+            if (perms) {
+              const map: Record<string, boolean> = {};
+              perms.forEach((p: { module: string; enabled: boolean }) => { map[p.module] = p.enabled; });
+              setRolePermissions(map);
+            }
+          });
       });
   }, [session]);
 
@@ -256,7 +270,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userRole={userRole} patients={patients} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userRole={userRole} patients={patients} rolePermissions={rolePermissions} />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
@@ -373,7 +387,7 @@ const App: React.FC = () => {
                   <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
                   <p className="text-slate-400 text-sm font-medium">Sincronizando dados...</p>
                 </div>
-              ) : !canAccessTab(activeTab, userRole) ? (
+              ) : !canAccessTab(activeTab, userRole, rolePermissions) ? (
                 // Trava real — antes disso, a única "proteção" era esconder o botão no
                 // menu (Sidebar). Se activeTab mudasse por qualquer outro caminho, o
                 // conteúdo restrito ainda renderizava. Agora o conteúdo nem monta.
@@ -393,7 +407,7 @@ const App: React.FC = () => {
                   {activeTab === 'automations'  && <Automations patients={patients} />}
                   {activeTab === 'finance'      && <Finance userRole={userRole} patients={patients} />}
                   {activeTab === 'services'     && <ServicesCatalog services={services} onRefresh={fetchServices} />}
-                  {activeTab === 'settings'     && <Settings professionals={professionals} services={services} onRefreshProfessionals={fetchProfessionals} onRefreshServices={fetchServices} session={session} userRole={userRole} />}
+                  {activeTab === 'settings'     && <Settings professionals={professionals} services={services} onRefreshProfessionals={fetchProfessionals} onRefreshServices={fetchServices} session={session} userRole={userRole} onRefreshPermissions={() => { if (session) { supabase.from('role_permissions').select('module, enabled').eq('role', userRole).then(({ data: perms }) => { if (perms) { const map: Record<string, boolean> = {}; perms.forEach((p: { module: string; enabled: boolean }) => { map[p.module] = p.enabled; }); setRolePermissions(map); } }); } }} />}
                   {activeTab === 'tasks'        && <Tasks professionals={professionals} session={session} onPendingCountChange={setPendingTasksCount} />}
                   {activeTab === 'bi'           && <ProfitDashboard />}
                   {activeTab === 'reports'      && <Reports />}

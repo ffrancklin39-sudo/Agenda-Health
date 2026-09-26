@@ -11,6 +11,7 @@ interface SidebarProps {
   setActiveTab: (tab: any) => void;
   userRole: UserRole;
   patients: Patient[];
+  rolePermissions?: Record<string, boolean>; // { module: enabled } — carregado do banco
 }
 
 interface MenuItem {
@@ -67,9 +68,14 @@ export const TAB_ROLES: Record<string, string[]> = Object.fromEntries(
   [...GROUPS.flatMap(g => g.items), ...SOLO_ITEMS].map(item => [item.id, item.roles])
 );
 
-export const canAccessTab = (tab: string, role: string): boolean => {
+export const canAccessTab = (tab: string, role: string, dynamicPerms?: Record<string, boolean>): boolean => {
+  // Se permissões dinâmicas foram carregadas do banco, elas têm prioridade
+  if (dynamicPerms && Object.keys(dynamicPerms).length > 0) {
+    return dynamicPerms[tab] === true;
+  }
+  // Fallback: regras estáticas hardcoded (enquanto o banco não carregou)
   const allowed = TAB_ROLES[tab];
-  if (!allowed) return true; // aba sem regra definida — não bloqueia (ex: abas sempre públicas)
+  if (!allowed) return true;
   return allowed.includes(role);
 };
 
@@ -109,11 +115,17 @@ interface NavGroupProps {
   userRole: string;
   onSelect: (id: string) => void;
   defaultOpen?: boolean;
+  rolePermissions?: Record<string, boolean>;
 }
 const NavGroup: React.FC<NavGroupProps> = ({
-  group, activeTab, sidebarCollapsed, userRole, onSelect, defaultOpen = true,
+  group, activeTab, sidebarCollapsed, userRole, onSelect, defaultOpen = true, rolePermissions,
 }) => {
-  const visibleItems = group.items.filter(i => i.roles.includes(userRole) && i.ready);
+  const hasDynamicPerms = rolePermissions && Object.keys(rolePermissions).length > 0;
+  const visibleItems = group.items.filter(i => {
+    if (!i.ready) return false;
+    if (hasDynamicPerms) return rolePermissions![i.id] === true;
+    return i.roles.includes(userRole);
+  });
   if (!visibleItems.length) return null;
 
   const hasActive = visibleItems.some(i => i.id === activeTab);
@@ -180,7 +192,7 @@ const NavGroup: React.FC<NavGroupProps> = ({
 
 // ─── Sidebar principal ────────────────────────────────────────
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, patients }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, patients, rolePermissions = {} }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [clock, setClock] = useState('');
 
@@ -208,7 +220,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pa
     ['lead', 'novos leads', 'new'].includes((p.status || '').toLowerCase())
   ).length;
 
-  const visibleSolo = SOLO_ITEMS.filter(i => i.roles.includes(userRole) && i.ready);
+  const hasDynamicPerms = Object.keys(rolePermissions).length > 0;
+  const visibleSolo = SOLO_ITEMS.filter(i => {
+    if (!i.ready) return false;
+    if (hasDynamicPerms) return rolePermissions[i.id] === true;
+    return i.roles.includes(userRole);
+  });
 
   return (
     <aside className={`bg-slate-100 flex flex-col h-full shadow-sm z-20 border-r border-slate-200 transition-all duration-300 ease-in-out ${collapsed ? 'w-[66px]' : 'w-64'}`}>
@@ -242,6 +259,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pa
             userRole={userRole}
             onSelect={setActiveTab}
             defaultOpen={group.id === 'operacional'}
+            rolePermissions={rolePermissions}
           />
         ))}
 

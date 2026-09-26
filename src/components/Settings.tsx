@@ -3,14 +3,14 @@ import { createPortal } from 'react-dom';
 import {
   User, Briefcase, Building2, Shield, Clock,
   Plus, Pencil, Trash2, Check, X, Loader2, CheckCircle2, AlertCircle,
-  Wallet, Search,
+  Wallet, Search, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import { Professional, ClinicService, UserProfileRow, UserRole } from '../types';
 import { supabase } from '../services/supabaseClient';
 import AvatarUpload from './AvatarUpload';
 import FinancialSettings from './admin/FinancialSettings';
 
-type SettingsTab = 'profissionais' | 'servicos' | 'clinica' | 'financeiro' | 'usuarios';
+type SettingsTab = 'profissionais' | 'servicos' | 'clinica' | 'financeiro' | 'usuarios' | 'permissoes';
 type ProfTab = 'dados' | 'horarios';
 type Toast = { type: 'success' | 'error'; msg: string } | null;
 
@@ -41,12 +41,148 @@ interface Props {
   onRefreshServices: () => void;
   session: any;
   userRole?: UserRole;
+  onRefreshPermissions?: () => void;
 }
 
 const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'Administrador(a)',
   DOCTOR: 'Profissional',
   RECEPTIONIST: 'Recepção',
+};
+
+// ─── Aba de Permissões ────────────────────────────────────────────────────────
+
+const ALL_MODULES = [
+  { id: 'dashboard',   label: 'Dashboard',    group: 'Operacional'    },
+  { id: 'agenda',      label: 'Agenda',        group: 'Operacional'    },
+  { id: 'kanban',      label: 'CRMi',          group: 'Operacional'    },
+  { id: 'patients',    label: 'Pacientes',     group: 'Operacional'    },
+  { id: 'tasks',       label: 'Tarefas',       group: 'Operacional'    },
+  { id: 'services',    label: 'Serviços',      group: 'Operacional'    },
+  { id: 'finance',     label: 'Financeiro',    group: 'Administrativo' },
+  { id: 'bi',          label: 'BI & Margem',   group: 'Administrativo' },
+  { id: 'reports',     label: 'Relatórios',    group: 'Administrativo' },
+  { id: 'settings',    label: 'Configurações', group: 'Administrativo' },
+];
+
+const ROLES_EDITAVEIS: UserRole[] = ['DOCTOR', 'RECEPTIONIST'];
+
+const PermissoesTab: React.FC<{ onRefreshPermissions?: () => void }> = ({ onRefreshPermissions }) => {
+  type PermMap = Record<string, Record<string, boolean>>; // { role: { module: enabled } }
+  const [perms, setPerms]     = useState<PermMap>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState<string | null>(null); // 'role:module'
+  const [toast, setToast]     = useState<string | null>(null);
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+  useEffect(() => {
+    supabase.from('role_permissions').select('role, module, enabled')
+      .then(({ data, error }) => {
+        if (error) { console.error(error); setLoading(false); return; }
+        const map: PermMap = {};
+        (data || []).forEach(({ role, module, enabled }: { role: string; module: string; enabled: boolean }) => {
+          if (!map[role]) map[role] = {};
+          map[role][module] = enabled;
+        });
+        setPerms(map);
+        setLoading(false);
+      });
+  }, []);
+
+  const toggle = async (role: UserRole, moduleId: string) => {
+    const key = `${role}:${moduleId}`;
+    const current = perms[role]?.[moduleId] ?? false;
+    const next = !current;
+    setPerms(p => ({ ...p, [role]: { ...p[role], [moduleId]: next } }));
+    setSaving(key);
+    const { error } = await supabase
+      .from('role_permissions')
+      .upsert({ role, module: moduleId, enabled: next }, { onConflict: 'role,module' });
+    setSaving(null);
+    if (error) {
+      setPerms(p => ({ ...p, [role]: { ...p[role], [moduleId]: current } }));
+      showToast('Erro ao salvar: ' + error.message);
+    } else {
+      showToast('Permissão atualizada!');
+      onRefreshPermissions?.();
+    }
+  };
+
+  const groups = [...new Set(ALL_MODULES.map(m => m.group))];
+
+  if (loading) return (
+    <div className="flex justify-center py-20">
+      <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="max-w-2xl space-y-6">
+
+        {toast && (
+          <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl shadow-lg">
+            {toast}
+          </div>
+        )}
+
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 text-sm text-amber-800">
+          <strong>ADMIN sempre tem acesso total</strong> — não é possível restringir o papel de administrador. Configure abaixo o que cada <em>Profissional</em> e <em>Recepção</em> pode ver.
+        </div>
+
+        {groups.map(group => (
+          <div key={group} className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">{group}</p>
+            </div>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left px-5 py-3 text-[11px] font-black text-slate-400 uppercase tracking-wider w-1/2">Módulo</th>
+                  {ROLES_EDITAVEIS.map(role => (
+                    <th key={role} className="text-center px-4 py-3 text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                      {ROLE_LABELS[role]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ALL_MODULES.filter(m => m.group === group).map((mod, idx, arr) => (
+                  <tr key={mod.id} className={idx < arr.length - 1 ? 'border-b border-slate-50' : ''}>
+                    <td className="px-5 py-3.5 text-sm font-semibold text-slate-700">{mod.label}</td>
+                    {ROLES_EDITAVEIS.map(role => {
+                      const enabled = perms[role]?.[mod.id] ?? false;
+                      const key = `${role}:${mod.id}`;
+                      const isSaving = saving === key;
+                      return (
+                        <td key={role} className="text-center px-4 py-3.5">
+                          <button
+                            onClick={() => toggle(role, mod.id)}
+                            disabled={isSaving}
+                            title={enabled ? 'Clique para desativar' : 'Clique para ativar'}
+                            className="inline-flex items-center justify-center disabled:opacity-50 transition-opacity"
+                          >
+                            {isSaving ? (
+                              <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />
+                            ) : enabled ? (
+                              <ToggleRight className="w-7 h-7 text-indigo-600" />
+                            ) : (
+                              <ToggleLeft className="w-7 h-7 text-slate-300" />
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 const TITLES = ['Nenhum', 'Sr.', 'Sra.', 'Dr.', 'Dra.', 'Prof.', 'Profa.'];
@@ -62,7 +198,7 @@ const blankProf = () => ({
 const blankSvc  = () => ({ name: '', price: 0, duration: 60, duration_minutes: 60, category: 'Consultas', description: '' });
 
 const Settings: React.FC<Props> = ({
-  professionals, services, onRefreshProfessionals, onRefreshServices, session, userRole,
+  professionals, services, onRefreshProfessionals, onRefreshServices, session, userRole, onRefreshPermissions,
 }) => {
   const [tab, setTab]     = useState<SettingsTab>('profissionais');
   const [toast, setToast] = useState<Toast>(null);
@@ -336,11 +472,12 @@ const Settings: React.FC<Props> = ({
   };
 
   const TABS: { id: SettingsTab; label: string; Icon: React.ElementType }[] = [
-    { id: 'profissionais', label: 'Profissionais', Icon: User      },
-    { id: 'servicos',      label: 'Servicos',      Icon: Briefcase },
-    { id: 'clinica',       label: 'Clinica',       Icon: Building2 },
-    { id: 'financeiro',    label: 'Financeiro',    Icon: Wallet    },
-    { id: 'usuarios',      label: 'Usuarios',      Icon: Shield    },
+    { id: 'profissionais', label: 'Profissionais', Icon: User        },
+    { id: 'servicos',      label: 'Servicos',      Icon: Briefcase   },
+    { id: 'clinica',       label: 'Clinica',       Icon: Building2   },
+    { id: 'financeiro',    label: 'Financeiro',    Icon: Wallet      },
+    { id: 'usuarios',      label: 'Usuarios',      Icon: Shield      },
+    { id: 'permissoes',    label: 'Permissões',    Icon: ToggleRight },
   ];
 
   return (
@@ -866,6 +1003,11 @@ const Settings: React.FC<Props> = ({
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <FinancialSettings />
         </div>
+      )}
+
+      {/* Permissões */}
+      {tab === 'permissoes' && userRole === 'ADMIN' && (
+        <PermissoesTab onRefreshPermissions={onRefreshPermissions} />
       )}
 
       {/* Usuarios */}
