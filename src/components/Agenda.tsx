@@ -271,6 +271,13 @@ const Agenda: React.FC<Props> = ({
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockForm, setBlockForm]           = useState({ professional_id: '', date: '', end_date: '', start: '08:00', end: '18:00', reason: '', full_day: false });
   const [savingBlock, setSavingBlock]       = useState(false);
+  // Recorrência de bloqueio
+  const [blockUseRec, setBlockUseRec]       = useState(false);
+  const [blockRecFreq, setBlockRecFreq]     = useState<RecFrequency>('weekly');
+  const [blockRecDays, setBlockRecDays]     = useState<number[]>([]);
+  const [blockRecEndMode, setBlockRecEndMode] = useState<'count'|'date'>('count');
+  const [blockRecSessions, setBlockRecSessions] = useState(10);
+  const [blockRecEndDate, setBlockRecEndDate]   = useState('');
 
   const fetchBlockedSlots = async () => {
     const ref  = new Date();
@@ -281,28 +288,48 @@ const Agenda: React.FC<Props> = ({
     setBlockedSlots((data || []) as BlockedSlot[]);
   };
 
+  const resetBlockModal = () => {
+    setBlockForm({ professional_id: '', date: '', end_date: '', start: '08:00', end: '18:00', reason: '', full_day: false });
+    setBlockUseRec(false); setBlockRecFreq('weekly'); setBlockRecDays([]);
+    setBlockRecEndMode('count'); setBlockRecSessions(10); setBlockRecEndDate('');
+  };
+
   const saveBlock = async () => {
     if (!blockForm.professional_id || !blockForm.date) return;
     setSavingBlock(true);
     const startTime = blockForm.full_day ? '00:00' : blockForm.start;
     const endTime   = blockForm.full_day ? '23:59' : blockForm.end;
-    // Se tiver data final diferente, cria um registro por dia
-    const startD = new Date(blockForm.date + 'T12:00');
-    const endD   = blockForm.end_date ? new Date(blockForm.end_date + 'T12:00') : startD;
-    const records = [];
-    for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
-      const ds = d.toISOString().slice(0, 10);
-      records.push({
-        professional_id: blockForm.professional_id,
-        start_datetime:  `${ds}T${startTime}:00`,
-        end_datetime:    `${ds}T${endTime}:00`,
-        reason:          blockForm.reason || null,
-      });
+
+    let dates: string[] = [];
+
+    if (blockUseRec) {
+      // Modo recorrente — usa o mesmo gerador dos agendamentos
+      const recOpts = {
+        days: blockRecDays,
+        untilDate: blockRecEndMode === 'date' ? blockRecEndDate : undefined,
+      };
+      const sessions = blockRecEndMode === 'count' ? blockRecSessions : 365;
+      dates = generateRecurrenceDates(blockForm.date, blockRecFreq, sessions, recOpts);
+    } else {
+      // Modo pontual/intervalo (comportamento original)
+      const startD = new Date(blockForm.date + 'T12:00');
+      const endD   = blockForm.end_date ? new Date(blockForm.end_date + 'T12:00') : startD;
+      for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+        dates.push(d.toISOString().slice(0, 10));
+      }
     }
+
+    const records = dates.map(ds => ({
+      professional_id: blockForm.professional_id,
+      start_datetime:  `${ds}T${startTime}:00`,
+      end_datetime:    `${ds}T${endTime}:00`,
+      reason:          blockForm.reason || null,
+    }));
+
     await supabase.from('blocked_slots').insert(records);
     setSavingBlock(false);
     setShowBlockModal(false);
-    setBlockForm({ professional_id: '', date: '', end_date: '', start: '08:00', end: '18:00', reason: '', full_day: false });
+    resetBlockModal();
     fetchBlockedSlots();
   };
 
@@ -2715,7 +2742,7 @@ const Agenda: React.FC<Props> = ({
                 <span>🔒</span>
                 <h3 className="text-base font-semibold text-slate-800">Bloquear Horário</h3>
               </div>
-              <button onClick={() => setShowBlockModal(false)}
+              <button onClick={() => { setShowBlockModal(false); resetBlockModal(); }}
                 className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 transition-all">
                 <X className="w-4 h-4" />
               </button>
@@ -2780,17 +2807,123 @@ const Agenda: React.FC<Props> = ({
                   value={blockForm.reason}
                   onChange={e => setBlockForm(f => ({ ...f, reason: e.target.value }))} />
               </div>
+
+              {/* ── Recorrência ── */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <label
+                  className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors"
+                  onClick={() => setBlockUseRec(v => !v)}
+                >
+                  <div className="relative shrink-0">
+                    <div className={`w-9 h-5 rounded-full transition-colors ${blockUseRec ? 'bg-indigo-600' : 'bg-slate-200'}`} />
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${blockUseRec ? 'translate-x-4' : ''}`} />
+                  </div>
+                  <span className="text-sm text-slate-700 font-medium">Bloqueio recorrente</span>
+                </label>
+
+                {blockUseRec && (
+                  <div className="px-3 pb-3 space-y-3 border-t border-slate-100 pt-3">
+                    {/* Frequência */}
+                    <div>
+                      <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Frequência</label>
+                      <select
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                        value={blockRecFreq}
+                        onChange={e => { setBlockRecFreq(e.target.value as RecFrequency); setBlockRecDays([]); }}
+                      >
+                        {(Object.entries(REC_FREQUENCY_LABELS) as [RecFrequency, string][]).map(([k, v]) => (
+                          <option key={k} value={k}>{v}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Dias da semana (apenas frequência semanal) */}
+                    {blockRecFreq === 'weekly' && (
+                      <div>
+                        <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 block">Dias da semana</label>
+                        <div className="flex gap-1 flex-wrap">
+                          {['D','S','T','Q','Q','S','S'].map((l, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => setBlockRecDays(prev => prev.includes(i) ? prev.filter(d => d !== i) : [...prev, i].sort())}
+                              className={`w-8 h-8 rounded-lg text-xs font-bold transition-all border ${
+                                blockRecDays.includes(i)
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'
+                              }`}
+                            >{l}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Término */}
+                    <div>
+                      <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 block">Término</label>
+                      <div className="flex gap-2 mb-2">
+                        {(['count','date'] as const).map(m => (
+                          <button key={m} type="button"
+                            onClick={() => setBlockRecEndMode(m)}
+                            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all ${blockRecEndMode === m ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}
+                          >{m === 'count' ? 'Nº de semanas' : 'Data final'}</button>
+                        ))}
+                      </div>
+                      {blockRecEndMode === 'count' ? (
+                        <div className="flex items-center gap-2">
+                          <input type="number" min={1} max={104}
+                            value={blockRecSessions}
+                            onChange={e => setBlockRecSessions(Math.max(1, Math.min(104, Number(e.target.value))))}
+                            className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs text-slate-500">
+                            {blockRecFreq === 'weekly' ? 'ocorrências' : 'repetições'}
+                          </span>
+                        </div>
+                      ) : (
+                        <input type="date" min={blockForm.date}
+                          value={blockRecEndDate}
+                          onChange={e => setBlockRecEndDate(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      )}
+                    </div>
+
+                    {/* Preview de quantos bloqueios serão criados */}
+                    {blockForm.date && (blockRecFreq !== 'weekly' || blockRecDays.length > 0) && (
+                      (() => {
+                        const preview = generateRecurrenceDates(blockForm.date, blockRecFreq, blockRecEndMode === 'count' ? blockRecSessions : 365, {
+                          days: blockRecDays,
+                          untilDate: blockRecEndMode === 'date' ? blockRecEndDate : undefined,
+                        });
+                        return preview.length > 0 ? (
+                          <p className="text-xs text-indigo-600 font-semibold bg-indigo-50 rounded-lg px-3 py-2">
+                            🔒 {preview.length} bloqueio{preview.length !== 1 ? 's' : ''} serão criados
+                            {preview.length > 0 && ` · até ${new Date(preview[preview.length-1]+'T12:00').toLocaleDateString('pt-BR')}`}
+                          </p>
+                        ) : null;
+                      })()
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2 px-5 py-4 border-t border-slate-100">
-              <button onClick={() => setShowBlockModal(false)}
+              <button onClick={() => { setShowBlockModal(false); resetBlockModal(); }}
                 className="px-4 py-2 text-sm text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all">
                 Cancelar
               </button>
-              <button onClick={saveBlock} disabled={savingBlock || !blockForm.professional_id || !blockForm.date}
+              <button
+                onClick={saveBlock}
+                disabled={
+                  savingBlock || !blockForm.professional_id || !blockForm.date ||
+                  (blockUseRec && blockRecFreq === 'weekly' && blockRecDays.length === 0) ||
+                  (blockUseRec && blockRecEndMode === 'date' && !blockRecEndDate)
+                }
                 className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-800 text-white text-sm font-medium rounded-xl hover:bg-slate-900 disabled:opacity-50 transition-all">
                 {savingBlock ? <Loader2 className="w-4 h-4 animate-spin" /> : '🔒'}
-                Bloquear Horário
+                {blockUseRec ? 'Bloquear Série' : 'Bloquear Horário'}
               </button>
             </div>
           </div>
