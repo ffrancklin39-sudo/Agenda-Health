@@ -25,6 +25,16 @@ CREATE TRIGGER trg_role_permissions_updated_at
   BEFORE UPDATE ON role_permissions
   FOR EACH ROW EXECUTE FUNCTION set_role_permissions_updated_at();
 
+-- Garante que a função is_admin() existe (pode ter sido criada antes em profiles_and_roles.sql)
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'ADMIN');
+$$;
+
 -- RLS
 ALTER TABLE role_permissions ENABLE ROW LEVEL SECURITY;
 
