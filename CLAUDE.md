@@ -125,12 +125,12 @@ SintesIA/
 | Aba | Status | Observações |
 |-----|--------|-------------|
 | Dashboard | ✅ | KPIs, funil, métricas |
-| Agenda | ⏳ | UI pronta, lógica de criação/edição incompleta |
+| Agenda | ✅ | Criação simples, múltiplos procedimentos, recorrência, edição, exclusão, validação de conflito |
 | CRMi | ✅ | Kanban drag-drop, PaymentModal ao confirmar |
 | Pacientes | ✅ | Lista, filtros, perfil completo |
 | Tarefas | ✅ | Funcional |
 | Automações | ⏳ | UI apenas |
-| Serviços | ⚠️ | UI apenas |
+| Serviços | ✅ | CRUD completo — criar, editar, excluir, busca |
 
 ### Sidebar — Grupo ADMINISTRATIVO
 | Aba | Status | Observações |
