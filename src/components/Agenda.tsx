@@ -271,6 +271,9 @@ const Agenda: React.FC<Props> = ({
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockForm, setBlockForm]           = useState({ professional_id: '', date: '', end_date: '', start: '08:00', end: '18:00', reason: '', full_day: false });
   const [savingBlock, setSavingBlock]       = useState(false);
+  interface BlockDragPreview { blockId: string; topPx: number; heightPx: number; date: string; }
+  const [blockDragPreview, setBlockDragPreview] = useState<BlockDragPreview | null>(null);
+  const blockDragPreviewRef                     = useRef<BlockDragPreview | null>(null);
   // Recorrência de bloqueio
   const [blockUseRec, setBlockUseRec]       = useState(false);
   const [blockRecFreq, setBlockRecFreq]     = useState<RecFrequency>('weekly');
@@ -336,6 +339,91 @@ const Agenda: React.FC<Props> = ({
   const deleteBlock = async (id: string) => {
     await supabase.from('blocked_slots').delete().eq('id', id);
     fetchBlockedSlots();
+  };
+
+  const startBlockDrag = (
+    block: BlockedSlot,
+    e: React.MouseEvent,
+    scale: number,
+    weekDays?: Date[],
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const startH  = parseInt(block.start_datetime.slice(11, 13));
+    const startM  = parseInt(block.start_datetime.slice(14, 16));
+    const endH    = parseInt(block.end_datetime.slice(11, 13));
+    const endM    = parseInt(block.end_datetime.slice(14, 16));
+    const origMins   = startH * 60 + startM;
+    const dur        = (endH * 60 + endM) - origMins;
+    const origDate   = block.start_datetime.slice(0, 10);
+    const startY     = e.clientY;
+    const startX     = e.clientX;
+    const pxPerMin   = (HOUR_HEIGHT / 60) * scale;
+    let didMove      = false;
+
+    let colWidth = 0;
+    if (weekDays && weekGridRef.current) {
+      const totalW = weekGridRef.current.clientWidth - 56;
+      colWidth = totalW / weekDays.length;
+    }
+
+    const setPreview = (p: BlockDragPreview | null) => {
+      blockDragPreviewRef.current = p;
+      setBlockDragPreview(p);
+    };
+
+    const handleMove = (ev: MouseEvent) => {
+      const deltaY = ev.clientY - startY;
+      if (Math.abs(deltaY) < 3 && Math.abs(ev.clientX - startX) < 3 && !didMove) return;
+      didMove = true;
+
+      const deltaMin = Math.round(deltaY / pxPerMin / SNAP_MIN) * SNAP_MIN;
+      const newMins  = Math.max(START_HOUR * 60, Math.min((END_HOUR - 1) * 60 - dur, origMins + deltaMin));
+      const topPx    = (newMins - START_HOUR * 60) * pxPerMin;
+
+      let newDate = origDate;
+      if (weekDays && colWidth > 0 && weekGridRef.current) {
+        const rect   = weekGridRef.current.getBoundingClientRect();
+        const relX   = ev.clientX - rect.left - 56;
+        const colIdx = Math.max(0, Math.min(weekDays.length - 1, Math.floor(relX / colWidth)));
+        newDate      = toDateStr(weekDays[colIdx]);
+      }
+
+      setPreview({ blockId: block.id, topPx, heightPx: dur * pxPerMin, date: newDate });
+    };
+
+    const handleUp = async (ev: MouseEvent) => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+
+      const preview = blockDragPreviewRef.current;
+      setPreview(null);
+      if (!didMove || !preview) return;
+
+      const deltaY    = ev.clientY - startY;
+      const deltaM    = Math.round(deltaY / pxPerMin / SNAP_MIN) * SNAP_MIN;
+      const newMins   = Math.max(START_HOUR * 60, Math.min((END_HOUR - 1) * 60 - dur, origMins + deltaM));
+      const newStart  = `${preview.date}T${minToTime(newMins)}:00`;
+      const newEnd    = `${preview.date}T${minToTime(newMins + dur)}:00`;
+
+      // Optimistic update
+      setBlockedSlots(prev => prev.map(b =>
+        b.id === block.id ? { ...b, start_datetime: newStart, end_datetime: newEnd } : b
+      ));
+      const { error } = await supabase.from('blocked_slots')
+        .update({ start_datetime: newStart, end_datetime: newEnd })
+        .eq('id', block.id);
+      if (error) {
+        setBlockedSlots(prev => prev.map(b => b.id === block.id ? block : b));
+        setToast({ type: 'error', msg: 'Erro ao mover bloqueio.' });
+      } else {
+        setToast({ type: 'success', msg: 'Bloqueio movido!' });
+      }
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
   };
 
   // ── Horários flexíveis (recorrentes) por profissional — almoço, dias parciais, etc ──
@@ -1480,7 +1568,7 @@ const Agenda: React.FC<Props> = ({
    *  1) os horários "fora do expediente" recorrentes (almoço etc, configurados em Configurações > Profissionais);
    *  2) os bloqueios pontuais (ad-hoc) já existentes (férias, atestado, etc).
    *  Reaproveitado entre a visão diária e semanal pra manter o mesmo comportamento. */
-  const renderBlocksForDay = (ds: string, scale: number) => {
+  const renderBlocksForDay = (ds: string, scale: number, weekDays?: Date[]) => {
     const recurring = selectedProf !== 'all'
       ? getOutOfHoursRanges(selectedProf, ds).map(([a, b], idx) => {
           const topPx = getTopOffset(Math.floor(a / 60), a % 60) * scale;
@@ -1503,39 +1591,74 @@ const Agenda: React.FC<Props> = ({
       const bDate = b.start_datetime.slice(0, 10);
       return bDate === ds && (selectedProf === 'all' || b.professional_id === selectedProf);
     }).map(b => {
-      const prof   = professionals.find(p => p.id === b.professional_id);
-      const startH = parseInt(b.start_datetime.slice(11, 13));
-      const startM = parseInt(b.start_datetime.slice(14, 16));
+      const prof      = professionals.find(p => p.id === b.professional_id);
+      const isDragging = blockDragPreview?.blockId === b.id;
+      // Usa posição do preview durante o drag; senão usa a posição real
+      const startH = isDragging
+        ? Math.floor((parseInt(b.start_datetime.slice(11, 13)) * 60 + parseInt(b.start_datetime.slice(14, 16))) / 60)
+        : parseInt(b.start_datetime.slice(11, 13));
+      const startM = isDragging
+        ? (parseInt(b.start_datetime.slice(11, 13)) * 60 + parseInt(b.start_datetime.slice(14, 16))) % 60
+        : parseInt(b.start_datetime.slice(14, 16));
       const endH   = parseInt(b.end_datetime.slice(11, 13));
       const endM   = parseInt(b.end_datetime.slice(14, 16));
-      const topPx  = getTopOffset(startH, startM) * scale;
-      const hPx    = ((endH * 60 + endM) - (startH * 60 + startM)) * (HOUR_HEIGHT / 60) * scale;
+      const topPx  = isDragging ? blockDragPreview!.topPx : getTopOffset(startH, startM) * scale;
+      const hPx    = isDragging ? blockDragPreview!.heightPx : ((endH * 60 + endM) - (startH * 60 + startM)) * (HOUR_HEIGHT / 60) * scale;
+      // Se está sendo arrastado para outro dia, mostra ghost transparente na posição original
+      const isGhost = isDragging && blockDragPreview!.date !== ds;
+      const realTopPx = getTopOffset(parseInt(b.start_datetime.slice(11,13)), parseInt(b.start_datetime.slice(14,16))) * scale;
+      const realHPx   = ((endH * 60 + endM) - (parseInt(b.start_datetime.slice(11,13)) * 60 + parseInt(b.start_datetime.slice(14,16)))) * (HOUR_HEIGHT / 60) * scale;
       const c      = getProfColor(prof?.color || 'blue');
+      const canDrag = selectedProf !== 'all';
       return (
-        <div key={b.id} style={{
-          position: 'absolute', top: topPx + 2, left: 3, right: 3,
-          height: Math.max(24, hPx - 4), zIndex: 4,
-          background: `repeating-linear-gradient(45deg, ${c.bg}, ${c.bg} 6px, ${c.bg}cc 6px, ${c.bg}cc 12px)`,
-          border: `1.5px dashed ${c.border}`,
-          borderRadius: 8, opacity: 0.85,
-          pointerEvents: selectedProf === 'all' ? 'none' : 'auto',
-        }}
-          className="flex flex-col justify-between px-2 py-1 overflow-hidden"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-semibold" style={{ color: c.border }}>
-              🔒 {prof?.name?.split(' ')[0]} — {b.reason || 'Bloqueado'}
+        <React.Fragment key={b.id}>
+          {/* Ghost na posição original quando arrastando para outro dia */}
+          {isDragging && blockDragPreview!.date !== ds && (
+            <div style={{
+              position: 'absolute', top: realTopPx + 2, left: 3, right: 3,
+              height: Math.max(24, realHPx - 4), zIndex: 4,
+              background: `repeating-linear-gradient(45deg, ${c.bg}55, ${c.bg}55 6px, ${c.bg}33 6px, ${c.bg}33 12px)`,
+              border: `1.5px dashed ${c.border}88`, borderRadius: 8, opacity: 0.4,
+              pointerEvents: 'none',
+            }} />
+          )}
+          <div
+            onMouseDown={canDrag ? (e) => startBlockDrag(b, e, scale, weekDays) : undefined}
+            style={{
+              position: 'absolute',
+              top: (isDragging && blockDragPreview!.date === ds ? blockDragPreview!.topPx : realTopPx) + 2,
+              left: 3, right: 3,
+              height: Math.max(24, (isDragging && blockDragPreview!.date === ds ? blockDragPreview!.heightPx : realHPx) - 4),
+              zIndex: isDragging ? 20 : 4,
+              background: `repeating-linear-gradient(45deg, ${c.bg}, ${c.bg} 6px, ${c.bg}cc 6px, ${c.bg}cc 12px)`,
+              border: `1.5px dashed ${c.border}`,
+              borderRadius: 8,
+              opacity: isDragging && blockDragPreview!.date !== ds ? 0 : 0.85,
+              pointerEvents: selectedProf === 'all' ? 'none' : 'auto',
+              cursor: canDrag ? 'grab' : 'default',
+              boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.18)' : undefined,
+              transform: isDragging ? 'scale(1.01)' : undefined,
+              transition: isDragging ? 'none' : 'box-shadow 0.15s',
+            }}
+            className="flex flex-col justify-between px-2 py-1 overflow-hidden select-none"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-semibold" style={{ color: c.border }}>
+                🔒 {prof?.name?.split(' ')[0]} — {b.reason || 'Bloqueado'}
+              </span>
+              {selectedProf !== 'all' && (
+                <button
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={() => deleteBlock(b.id)}
+                  className="text-[10px] opacity-60 hover:opacity-100 transition-opacity ml-1"
+                  style={{ color: c.border }}>✕</button>
+              )}
+            </div>
+            <span className="text-[8px] opacity-60" style={{ color: c.border }}>
+              {b.start_datetime.slice(11, 16)} – {b.end_datetime.slice(11, 16)}
             </span>
-            {selectedProf !== 'all' && (
-              <button onClick={() => deleteBlock(b.id)}
-                className="text-[10px] opacity-60 hover:opacity-100 transition-opacity ml-1"
-                style={{ color: c.border }}>✕</button>
-            )}
           </div>
-          <span className="text-[8px] opacity-60" style={{ color: c.border }}>
-            {b.start_datetime.slice(11, 16)} – {b.end_datetime.slice(11, 16)}
-          </span>
-        </div>
+        </React.Fragment>
       );
     });
 
@@ -1627,7 +1750,7 @@ const Agenda: React.FC<Props> = ({
                   })()}
 
                   {/* Bloqueios de horário (recorrentes + pontuais) */}
-                  {renderBlocksForDay(ds, 1)}
+                  {renderBlocksForDay(ds, 1, weekDays)}
 
                   {/* Ghost on target column when dragging to a different day */}
                   {renderDragGhost(ds, 1)}
