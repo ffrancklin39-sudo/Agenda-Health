@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Bell, Loader2, LogOut, AlertCircle, CheckCircle2, ListChecks, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, Bell, Loader2, LogOut, AlertCircle, CheckCircle2, ListChecks, ShieldAlert, User, KeyRound, Eye, EyeOff, Check, X } from 'lucide-react';
 import { Patient, PatientStatus, UserRole, Professional, ClinicService } from './types';
 import Sidebar, { canAccessTab } from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -18,6 +18,157 @@ import ProfitDashboard from './components/bi/ProfitDashboard';
 import Reports from './components/admin/Reports';
 import { supabase } from './services/supabaseClient';
 import { sanitizePhone } from './phoneUtils';
+
+// ─── Dropdown de perfil do usuário (canto superior direito) ──────────────────
+interface UserProfileMenuProps {
+  email: string;
+  role: string;
+  onSignOut: () => void;
+}
+const UserProfileMenu: React.FC<UserProfileMenuProps> = ({ email, role, onSignOut }) => {
+  const [open, setOpen] = useState(false);
+  const [changingPwd, setChangingPwd] = useState(false);
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setChangingPwd(false);
+        setMsg(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const initials = email.slice(0, 2).toUpperCase();
+  const displayName = email.split('@')[0];
+  const roleLabel: Record<string, string> = { ADMIN: 'Admin', DOCTOR: 'Médico/Prof.', RECEPTIONIST: 'Recepção' };
+
+  const handleSavePwd = async () => {
+    if (newPwd.length < 6) { setMsg({ ok: false, text: 'Mínimo 6 caracteres.' }); return; }
+    if (newPwd !== confirmPwd) { setMsg({ ok: false, text: 'As senhas não coincidem.' }); return; }
+    setSaving(true);
+    setMsg(null);
+    const { error } = await supabase.auth.updateUser({ password: newPwd });
+    setSaving(false);
+    if (error) { setMsg({ ok: false, text: error.message }); return; }
+    setMsg({ ok: true, text: 'Senha alterada com sucesso!' });
+    setNewPwd(''); setConfirmPwd('');
+    setTimeout(() => { setChangingPwd(false); setMsg(null); setOpen(false); }, 1800);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      {/* Avatar botão */}
+      <button
+        onClick={() => { setOpen(v => !v); setChangingPwd(false); setMsg(null); }}
+        className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-slate-100 transition-all"
+      >
+        <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+          {initials}
+        </div>
+        <div className="text-right hidden sm:block">
+          <p className="text-sm font-bold text-slate-800 leading-none">{displayName}</p>
+          <p className="text-[10px] font-semibold text-indigo-600 uppercase tracking-widest mt-0.5">{roleLabel[role] || role}</p>
+        </div>
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Cabeçalho */}
+          <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold shrink-0">
+              {initials}
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-800">{displayName}</p>
+              <p className="text-xs text-slate-500">{email}</p>
+              <span className="inline-block mt-0.5 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase rounded-full">
+                {roleLabel[role] || role}
+              </span>
+            </div>
+          </div>
+
+          {/* Ações */}
+          {!changingPwd ? (
+            <div className="p-2">
+              <button
+                onClick={() => setChangingPwd(true)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors text-sm font-semibold"
+              >
+                <KeyRound size={15} className="text-slate-400" />
+                Alterar senha
+              </button>
+              <div className="my-1 border-t border-slate-100" />
+              <button
+                onClick={onSignOut}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors text-sm font-semibold"
+              >
+                <LogOut size={15} />
+                Sair
+              </button>
+            </div>
+          ) : (
+            <div className="p-4 space-y-3">
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                <KeyRound size={12} /> Alterar senha
+              </p>
+              <div className="relative">
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  placeholder="Nova senha (mín. 6 caracteres)"
+                  value={newPwd}
+                  onChange={e => setNewPwd(e.target.value)}
+                  className="w-full px-3 py-2 pr-9 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50"
+                />
+                <button type="button" onClick={() => setShowPwd(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <input
+                type={showPwd ? 'text' : 'password'}
+                placeholder="Confirmar nova senha"
+                value={confirmPwd}
+                onChange={e => setConfirmPwd(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSavePwd()}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50"
+              />
+              {msg && (
+                <p className={`text-xs font-semibold flex items-center gap-1 ${msg.ok ? 'text-emerald-600' : 'text-rose-500'}`}>
+                  {msg.ok ? <Check size={12} /> : <X size={12} />} {msg.text}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setChangingPwd(false); setMsg(null); setNewPwd(''); setConfirmPwd(''); }}
+                  className="flex-1 py-2 text-xs font-bold text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSavePwd}
+                  disabled={saving}
+                  className="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60"
+                >
+                  {saving ? 'Salvando...' : 'Salvar senha'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
@@ -359,19 +510,11 @@ const App: React.FC = () => {
 
             <div className="w-px h-6 bg-slate-200" />
 
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-slate-800 leading-none">{session.user.email?.split('@')[0]}</p>
-                <p className="text-[10px] font-semibold text-indigo-600 uppercase tracking-widest mt-0.5">{userRole}</p>
-              </div>
-              <button
-                onClick={() => supabase.auth.signOut()}
-                className="w-9 h-9 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 transition-all"
-                title="Sair"
-              >
-                <LogOut size={16} />
-              </button>
-            </div>
+            <UserProfileMenu
+              email={session.user.email || ''}
+              role={userRole}
+              onSignOut={() => supabase.auth.signOut()}
+            />
           </div>
         </header>
 
