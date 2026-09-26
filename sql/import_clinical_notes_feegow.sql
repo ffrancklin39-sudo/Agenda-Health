@@ -6,7 +6,7 @@
 -- ============================================================
 
 INSERT INTO patient_clinical_notes (patient_id, type, content, professional, note_date)
-SELECT p.id, v.type, v.content, v.professional, v.note_date
+SELECT p.id, v.type, v.content, v.professional, v.note_date::TIMESTAMPTZ
 FROM (VALUES
   ('06335546930', 'prescricao', '<p><span style=&quot;font-family:courier new,courier,monospace&quot;><strong>Uso INTERNO</strong><br />
 <strong>1.</strong> PARACETAMOL ...........................................1 CAIXA </span></p>
