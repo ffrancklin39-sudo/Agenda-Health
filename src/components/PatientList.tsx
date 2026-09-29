@@ -159,21 +159,21 @@ const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch
           ))}
         </div>
 
-        {/* Tabela — ocupa o espaço restante com scroll só vertical */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
+        {/* Tabela — scroll vertical e horizontal quando necessário */}
+        <div className="flex-1 overflow-auto">
+          <table className="text-left border-collapse" style={{ tableLayout: 'fixed', minWidth: '1080px', width: '100%' }}>
             <colgroup>
-              <col style={{ width: '2%' }} />   {/* checkbox */}
-              <col style={{ width: '7%' }} />   {/* prontuário */}
-              <col style={{ width: '20%' }} />  {/* nome */}
-              <col style={{ width: '10%' }} />  {/* CPF */}
-              <col style={{ width: '9%' }} />   {/* convênio */}
-              <col style={{ width: '8%' }} />   {/* nascimento */}
-              <col style={{ width: '7%' }} />   {/* sexo */}
-              <col style={{ width: '10%' }} />  {/* celular */}
-              <col style={{ width: '11%' }} />  {/* últ. agend. */}
-              <col style={{ width: '11%' }} />  {/* próx. agend. */}
-              <col style={{ width: '5%' }} />   {/* ações */}
+              <col style={{ width: '32px' }} />   {/* checkbox */}
+              <col style={{ width: '80px' }} />   {/* prontuário */}
+              <col style={{ width: '200px' }} />  {/* nome */}
+              <col style={{ width: '110px' }} />  {/* CPF */}
+              <col style={{ width: '100px' }} />  {/* convênio */}
+              <col style={{ width: '90px' }} />   {/* nascimento */}
+              <col style={{ width: '65px' }} />   {/* sexo */}
+              <col style={{ width: '120px' }} />  {/* celular */}
+              <col style={{ width: '140px' }} />  {/* últ. agend. */}
+              <col style={{ width: '140px' }} />  {/* próx. agend. */}
+              <col style={{ width: '73px' }} />   {/* ações */}
             </colgroup>
 
             <thead>

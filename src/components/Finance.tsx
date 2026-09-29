@@ -138,21 +138,25 @@ const Finance: React.FC<Props> = ({ patients }) => {
     <div className="flex flex-col gap-0 h-full">
 
       {/* Sub-navegação */}
-      <div className="flex items-center gap-0 border-b border-slate-200 mb-6 overflow-x-auto">
-        {FINANCE_TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setFinanceTab(id)}
-            className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
-              financeTab === id
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-400 hover:text-slate-700'
-            }`}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            {label}
-          </button>
-        ))}
+      <div className="relative border-b border-slate-200 mb-6">
+        <div className="flex items-center gap-0 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}>
+          {FINANCE_TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setFinanceTab(id)}
+              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 whitespace-nowrap shrink-0 transition-colors ${
+                financeTab === id
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Indicador visual: fade quando as abas transbordam */}
+        <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white to-transparent" />
       </div>
 
       {/* Sub-abas */}
