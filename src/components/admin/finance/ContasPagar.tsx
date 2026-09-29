@@ -447,7 +447,7 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
           </div>
           <div className={form.recurrence !== 'none' ? '' : 'col-span-1'}>
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Repetição</label>
-            <select className={inputCls} value={form.recurrence} onChange={e => { set('recurrence', e.target.value); setRecMode('forever'); }}>
+            <select className={inputCls} value={form.recurrence} onChange={e => { const val = e.target.value; set('recurrence', val); if (val === 'none') setRecMode('forever'); }}>
               {RECURRENCES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
@@ -475,8 +475,8 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
                     type="number" min={2} max={360}
                     className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs text-center outline-none focus:border-indigo-400 bg-white"
                     value={numInstallments}
-                    onChange={e => setNumInstallments(e.target.value === '' ? '' : parseInt(e.target.value))}
-                    onClick={() => setRecMode('installments')}
+                    onChange={e => { setNumInstallments(e.target.value === '' ? '' : parseInt(e.target.value)); setRecMode('installments'); }}
+                    onFocus={() => setRecMode('installments')}
                   />
                   <span className="text-xs text-slate-700">vezes</span>
                   {installmentSummary && recMode === 'installments' && (
