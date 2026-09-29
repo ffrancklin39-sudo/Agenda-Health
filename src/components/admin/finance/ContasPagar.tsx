@@ -465,14 +465,16 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
     if (err) { setSaving(false); console.error('[BillForm] save error:', err); setError(err.message); return; }
 
     // Ao editar a RAIZ de uma série parcelada, completa as filhas faltantes
-    // (corrige séries criadas antes da geração eager — salvar novamente conserta)
-    if (initial?.id && !initial.parent_bill_id && isInstallmentMode && payload.installment_total) {
-      const total = payload.installment_total;
+    // Usa payload.installment_total OU initial.installment_total como fallback
+    // para funcionar mesmo quando o form não detectou o modo "installments"
+    const rootInstTotal = payload.installment_total ?? initial?.installment_total ?? null;
+    let filledCount = 0;
+    if (initial?.id && !initial.parent_bill_id && rootInstTotal && rootInstTotal >= 2 && form.recurrence !== 'none') {
       const { data: existing } = await supabase
         .from('bills').select('installment_number').eq('parent_bill_id', initial.id);
       const existingNums = new Set((existing ?? []).map((c: any) => Number(c.installment_number)));
       const missing = [];
-      for (let i = 2; i <= total; i++) {
+      for (let i = 2; i <= rootInstTotal; i++) {
         if (!existingNums.has(i)) {
           missing.push({
             description:        payload.description,
@@ -481,24 +483,27 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
             amount:             payload.amount,
             due_date:           addPeriods(form.due_date, form.recurrence, i - 1),
             recurrence:         payload.recurrence,
-            recurrence_end:     payload.recurrence_end,
+            recurrence_end:     payload.recurrence_end
+                                  ?? addPeriods(form.due_date, form.recurrence, rootInstTotal - 1),
             document_number:    payload.document_number,
             notes:              payload.notes,
             boleto_url:         payload.boleto_url,
             installment_number: i,
-            installment_total:  total,
+            installment_total:  rootInstTotal,
             parent_bill_id:     initial.id,
           });
         }
       }
       if (missing.length > 0) {
         const { error: fillErr } = await supabase.from('bills').insert(missing);
-        if (fillErr) console.error('[BillForm] fill missing installments error:', fillErr);
+        if (!fillErr) filledCount = missing.length;
+        else console.error('[BillForm] fill missing installments error:', fillErr);
       }
     }
 
     setSaving(false);
-    onSave();
+    // Se completou filhas faltantes, reseta viewMonth para exibir todos os períodos
+    onSave(filledCount > 0 ? (rootInstTotal ?? undefined) : undefined);
   };
 
   return (
