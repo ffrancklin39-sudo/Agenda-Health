@@ -141,6 +141,12 @@ const Tasks: React.FC<Props> = ({ professionals, session, onPendingCountChange }
   const isOverdue = (t: Task) =>
     t.due_date && t.status !== 'done' && new Date(t.due_date) < new Date();
 
+  const overduedays = (t: Task): number => {
+    if (!t.due_date || t.status === 'done') return 0;
+    const diff = new Date().getTime() - new Date(t.due_date + 'T00:00').getTime();
+    return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+  };
+
   const fmtDate = (d?: string) => d
     ? new Date(d + 'T00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
     : '';
@@ -211,12 +217,14 @@ const Tasks: React.FC<Props> = ({ professionals, session, onPendingCountChange }
           const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.normal;
           const stat = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
           const overdue = isOverdue(task);
+          const days = overdue ? overduedays(task) : 0;
+          const veryOverdue = days >= 7;
 
           return (
             <div key={task.id}
-              className={`bg-white border rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md transition-shadow
-                ${task.status === 'done' ? 'opacity-60' : ''}
-                ${overdue ? 'border-rose-200' : 'border-slate-100'}`}>
+              className={`border rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md transition-shadow
+                ${task.status === 'done' ? 'opacity-60 bg-white' : veryOverdue ? 'bg-rose-50/40' : 'bg-white'}
+                ${veryOverdue ? 'border-rose-400' : overdue ? 'border-rose-200' : 'border-slate-100'}`}>
               <div className="flex items-start gap-3">
 
                 {/* Checkbox de status */}
@@ -267,6 +275,12 @@ const Tasks: React.FC<Props> = ({ professionals, session, onPendingCountChange }
                         <Calendar className="w-3 h-3" />
                         {overdue && <AlertCircle className="w-3 h-3" />}
                         {fmtDate(task.due_date)}{task.due_time ? ` ${task.due_time.slice(0, 5)}` : ''}
+                      </span>
+                    )}
+                    {/* Alerta de atraso severo */}
+                    {veryOverdue && (
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 border border-rose-300 text-rose-700 text-[10px] font-bold">
+                        {days}d atrasada
                       </span>
                     )}
 

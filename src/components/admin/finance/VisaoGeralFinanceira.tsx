@@ -14,15 +14,16 @@ const MONTHS_PT = [
 ];
 
 const CATEGORY_LABEL: Record<string, string> = {
-  aluguel: 'Aluguel',
-  salario: 'Salário',
-  insumos: 'Insumos',
+  aluguel:      'Aluguel',
+  salario:      'Salário',
+  insumos:      'Insumos',
   equipamentos: 'Equipamentos',
-  marketing: 'Marketing',
-  servicos: 'Serviços',
-  impostos: 'Impostos',
-  manutencao: 'Manutenção',
-  outros: 'Outros',
+  marketing:    'Marketing',
+  servicos:     'Serviços',
+  impostos:     'Impostos',
+  manutencao:   'Manutenção',
+  telefone:     'Telefone',
+  outros:       'Outros',
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
@@ -34,6 +35,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   servicos:     '#3b82f6',
   impostos:     '#ef4444',
   manutencao:   '#f97316',
+  telefone:     '#0ea5e9',
   outros:       '#94a3b8',
 };
 
@@ -193,10 +195,10 @@ const VisaoGeralFinanceira: React.FC = () => {
   ];
 
   const pieData = cats
-    .filter(c => c.estimado > 0)
+    .filter(c => c.estimado > 0 || c.realizado > 0)
     .map(c => ({
       name:  CATEGORY_LABEL[c.category] ?? c.category,
-      value: c.estimado,
+      value: c.realizado > 0 ? c.realizado : c.estimado,
       color: c.color,
     }));
 
@@ -224,10 +226,10 @@ const VisaoGeralFinanceira: React.FC = () => {
     <div className="space-y-4 animate-in fade-in duration-300">
 
       {/* ── Header + navegação ──────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-base font-bold text-slate-900">Visão Geral Financeira</h2>
-          <span className="text-xs text-slate-400">{monthYear}</span>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-3 shrink-0">
+          <h2 className="text-base font-bold text-slate-900 whitespace-nowrap">Visão Geral Financeira</h2>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{monthYear}</span>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -287,8 +289,8 @@ const VisaoGeralFinanceira: React.FC = () => {
                     <span style={{ color: '#475569' }}>{value}</span>
                   )}
                 />
-                <Bar dataKey="Estimado" fill="#c7d2fe" radius={[4, 4, 0, 0]} maxBarSize={48} />
-                <Bar dataKey="Realizado" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                <Bar dataKey="Estimado" fill="#c7d2fe" radius={[4, 4, 0, 0]} maxBarSize={48} minPointSize={3} />
+                <Bar dataKey="Realizado" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={48} minPointSize={3} />
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -471,10 +471,12 @@ const App: React.FC = () => {
               {showNotifications && (
                 <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                    <h3 className="text-sm font-bold text-slate-800">Notificacoes</h3>
-                    <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[10px] font-bold uppercase rounded-full">
-                      {dueReminders.length} pendentes
-                    </span>
+                    <h3 className="text-sm font-bold text-slate-800">Notificações</h3>
+                    {dueReminders.length > 0 && (
+                      <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[10px] font-bold uppercase rounded-full">
+                        {dueReminders.length} pendentes
+                      </span>
+                    )}
                   </div>
                   <div className="max-h-72 overflow-y-auto custom-scrollbar">
                     {dueReminders.length > 0 ? dueReminders.map(r => (
@@ -486,7 +488,7 @@ const App: React.FC = () => {
                         <p className="text-sm font-bold text-slate-800">{r.name}</p>
                         <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{r.reminderNote || 'Lembrete sem detalhes.'}</p>
                         <p className="text-[10px] font-bold text-amber-500 uppercase mt-1.5 flex items-center gap-1">
-                          <AlertCircle size={10} /> Requer Atencao
+                          <AlertCircle size={10} /> Requer Atenção
                         </p>
                       </div>
                     )) : (

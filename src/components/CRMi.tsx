@@ -889,7 +889,7 @@ const CRMi: React.FC<CRMiProps> = ({
     <div className="h-full flex flex-col bg-white rounded-2xl overflow-hidden">
 
       {/* ── HEADER ── */}
-      <div className="px-6 pt-5 pb-4 border-b border-slate-100 space-y-4">
+      <div className="px-6 pt-5 pb-4 border-b border-slate-100 space-y-4 shrink-0">
 
         {/* Título + ações */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -931,17 +931,17 @@ const CRMi: React.FC<CRMiProps> = ({
           <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Funil Ativo</p>
             <p className="text-2xl font-bold text-slate-800 leading-none">{kpis.active}</p>
-            <p className="text-[10px] text-slate-400 mt-1">leads no pipeline</p>
+            <p className="text-[10px] text-slate-400 mt-1 truncate">leads no pipeline</p>
           </div>
           <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
             <p className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-1">Agendados</p>
             <p className="text-2xl font-bold text-purple-700 leading-none">{kpis.scheduled}</p>
-            <p className="text-[10px] text-purple-400 mt-1">prontos p/ atender</p>
+            <p className="text-[10px] text-purple-400 mt-1 truncate">prontos p/ atender</p>
           </div>
           <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
             <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mb-1">Atendidos</p>
             <p className="text-2xl font-bold text-emerald-700 leading-none">{kpis.confirmed}</p>
-            <p className="text-[10px] text-emerald-400 mt-1">conversões totais</p>
+            <p className="text-[10px] text-emerald-400 mt-1 truncate">conversões totais</p>
           </div>
           <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
             <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Faturado</p>

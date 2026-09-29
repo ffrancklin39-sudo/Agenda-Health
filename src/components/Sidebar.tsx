@@ -57,7 +57,7 @@ const GROUPS: MenuGroup[] = [
 
 // Item de menu isolado (Configurações fica fora dos grupos)
 const SOLO_ITEMS: MenuItem[] = [
-  { id: 'settings', label: 'Configuracoes', icon: SettingsIcon, roles: ['ADMIN'], ready: true },
+  { id: 'settings', label: 'Configurações', icon: SettingsIcon, roles: ['ADMIN'], ready: true },
 ];
 
 // ─── Mapa de acesso por aba (fonte única — usado também pelo guard real em App.tsx) ───

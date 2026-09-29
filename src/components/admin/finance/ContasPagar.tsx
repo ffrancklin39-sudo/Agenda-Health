@@ -48,6 +48,7 @@ const DEFAULT_CATEGORIES = [
   { value: 'servicos',     label: 'Serviços' },
   { value: 'impostos',     label: 'Impostos' },
   { value: 'manutencao',   label: 'Manutenção' },
+  { value: 'telefone',     label: 'Telefone' },
   { value: 'outros',       label: 'Outros' },
 ];
 

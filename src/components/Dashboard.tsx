@@ -152,12 +152,13 @@ const Dashboard: React.FC<Props> = ({ patients, dueReminders }) => {
     {
       label: 'Faturamento',
       sublabel: (() => {
-        if (realNetProfit === null) return 'carregando...';
+        if (realRevenue === null) return 'carregando...';
         const pct = lastRevenue && lastRevenue > 0
           ? ((( (realRevenue ?? 0) - lastRevenue) / lastRevenue) * 100).toFixed(0)
           : null;
         const trend = pct !== null ? (Number(pct) >= 0 ? `+${pct}%` : `${pct}%`) + ' vs mês ant.' : '';
-        return `líquido: ${fmt(realNetProfit)}${trend ? '  ·  ' + trend : ''}`;
+        const netStr = realNetProfit !== null ? `líquido: ${fmt(realNetProfit)}` : '';
+        return `${netStr}${netStr && trend ? '  ·  ' : ''}${trend}` || 'este mês';
       })(),
       value: realRevenue !== null ? fmt(realRevenue) : '—',
       icon: DollarSign,
