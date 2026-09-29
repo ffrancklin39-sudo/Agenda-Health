@@ -975,11 +975,11 @@ const CRMi: React.FC<CRMiProps> = ({
       </div>
 
       {/* ── KANBAN ── */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-4 min-h-0">
         <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
           <div
             ref={scrollContainerRef}
-            className="flex gap-3 overflow-x-auto pb-3 h-full items-start crm-hscroll"
+            className="flex gap-3 overflow-x-auto pb-3 h-full items-stretch crm-hscroll"
 
           >
             {Object.entries(COLUMNS).map(([columnId, config]) => {
@@ -1013,10 +1013,10 @@ const CRMi: React.FC<CRMiProps> = ({
               return (
                 <div
                   key={columnId}
-                  className={`w-[268px] flex flex-col max-h-full rounded-xl border ${config.border} bg-slate-50/50 shrink-0`}
+                  className={`w-[268px] flex flex-col rounded-xl border ${config.border} bg-slate-50/50 shrink-0 min-h-0`}
                 >
                   {/* Cabeçalho da coluna */}
-                  <div className={`p-3 border-b ${config.border} rounded-t-xl ${config.color}`}>
+                  <div className={`p-3 border-b ${config.border} rounded-t-xl ${config.color} shrink-0`}>
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
                         <div className={`w-1 h-5 rounded-full ${config.accent}`} />

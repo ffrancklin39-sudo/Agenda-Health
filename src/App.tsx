@@ -417,7 +417,7 @@ const App: React.FC = () => {
   // Usuário clicou no link de reset de senha — mostra tela de redefinição
   if (isRecovery) return <PasswordReset onDone={() => setIsRecovery(false)} />;
 
-  const nopad = activeTab === 'agenda' || activeTab === 'patients';
+  const nopad = activeTab === 'agenda' || activeTab === 'patients' || activeTab === 'kanban';
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
