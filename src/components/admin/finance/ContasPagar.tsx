@@ -385,9 +385,27 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
       }
     }
 
-    // Dados de parcela: só preenche ao criar nova conta em modo installments
-    // Ao editar, preserva os valores já existentes no banco
-    const isNewInstallment = !initial?.id && form.recurrence !== 'none' && recMode === 'installments' && Number(numInstallments) >= 2;
+    // Modo parcelado: novo OU edição que ativa "Após X vezes"
+    const isInstallmentMode = form.recurrence !== 'none' && recMode === 'installments' && Number(numInstallments) >= 2;
+    const isNewInstallment  = !initial?.id && isInstallmentMode;
+
+    // installment_number:
+    //   - Nova série: 1 (sempre começa em 1)
+    //   - Edição em modo parcelas: preserva número existente (ou 1 se não tinha)
+    //   - Demais casos: preserva valor existente (null para contas sem parcelamento)
+    // installment_total:
+    //   - Modo parcelas (novo ou edição): usa o numInstallments escolhido
+    //   - Demais casos: preserva valor existente
+    const installmentNumber = isNewInstallment
+      ? 1
+      : isInstallmentMode
+        ? (initial?.installment_number ?? 1)
+        : (initial?.installment_number ?? null);
+
+    const installmentTotal = isInstallmentMode
+      ? Number(numInstallments)
+      : (initial?.installment_total ?? null);
+
     const payload = {
       description:        form.description,
       category:           form.category,
@@ -399,8 +417,8 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
       document_number:    form.document_number || null,
       notes:              form.notes || null,
       boleto_url:         form.boleto_url || null,
-      installment_number: isNewInstallment ? 1 : (initial?.installment_number ?? null),
-      installment_total:  isNewInstallment ? Number(numInstallments) : (initial?.installment_total ?? null),
+      installment_number: installmentNumber,
+      installment_total:  installmentTotal,
     };
     const { error: err } = initial?.id
       ? await supabase.from('bills').update(payload).eq('id', initial.id)
@@ -570,8 +588,10 @@ const ContasPagar: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     // Gera os próximos 12 meses de contas recorrentes (idempotente)
-    await supabase.rpc('fn_generate_recurring_bills', { p_months_ahead: 12 });
-    const { data } = await supabase.from('bills').select('*').order('due_date', { ascending: true });
+    const { error: rpcErr } = await supabase.rpc('fn_generate_recurring_bills', { p_months_ahead: 12 });
+    if (rpcErr) console.error('[ContasPagar] fn_generate_recurring_bills error:', rpcErr);
+    const { data, error: fetchErr } = await supabase.from('bills').select('*').order('due_date', { ascending: true });
+    if (fetchErr) console.error('[ContasPagar] bills fetch error:', fetchErr);
     setBills((data ?? []) as Bill[]);
     setLoading(false);
   }, []);
@@ -903,8 +923,8 @@ const ContasPagar: React.FC = () => {
             setEditBill(null);
             if (installmentTotal && installmentTotal > 1) {
               setViewMonth(null);
-              setSuccessMsg(`${installmentTotal} parcelas criadas — mostrando todos os períodos.`);
-              setTimeout(() => setSuccessMsg(null), 6000);
+              setSuccessMsg(`✓ ${installmentTotal} parcelas — exibindo todos os períodos.`);
+              setTimeout(() => setSuccessMsg(null), 7000);
             }
             load();
           }}
