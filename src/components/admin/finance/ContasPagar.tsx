@@ -21,6 +21,9 @@ interface Bill {
   status: string;
   recurrence: string;
   recurrence_end: string | null;
+  parent_bill_id: string | null;
+  installment_number: number | null;
+  installment_total: number | null;
   payment_method: string | null;
   bank_account: string | null;
   document_number: string | null;
@@ -345,9 +348,12 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
   // Controles de recorrência expandida
   type RecMode = 'forever' | 'installments' | 'end_date';
   const [recMode, setRecMode]       = useState<RecMode>(
+    initial?.installment_total != null ? 'installments' :
     initial?.recurrence_end ? 'end_date' : 'forever',
   );
-  const [numInstallments, setNumInstallments] = useState<number | ''>(12);
+  const [numInstallments, setNumInstallments] = useState<number | ''>(
+    initial?.installment_total ?? 12,
+  );
   const [endDate, setEndDate] = useState<string>(initial?.recurrence_end ?? '');
 
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
@@ -377,17 +383,22 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
       }
     }
 
+    // Dados de parcela: só preenche ao criar nova conta em modo installments
+    // Ao editar, preserva os valores já existentes no banco
+    const isNewInstallment = !initial?.id && form.recurrence !== 'none' && recMode === 'installments' && Number(numInstallments) >= 2;
     const payload = {
-      description:     form.description,
-      category:        form.category,
-      supplier:        form.supplier || null,
-      amount:          amt,
-      due_date:        form.due_date,
-      recurrence:      form.recurrence,
-      recurrence_end:  recurrenceEnd,
-      document_number: form.document_number || null,
-      notes:           form.notes || null,
-      boleto_url:      form.boleto_url || null,
+      description:        form.description,
+      category:           form.category,
+      supplier:           form.supplier || null,
+      amount:             amt,
+      due_date:           form.due_date,
+      recurrence:         form.recurrence,
+      recurrence_end:     recurrenceEnd,
+      document_number:    form.document_number || null,
+      notes:              form.notes || null,
+      boleto_url:         form.boleto_url || null,
+      installment_number: isNewInstallment ? 1 : (initial?.installment_number ?? null),
+      installment_total:  isNewInstallment ? Number(numInstallments) : (initial?.installment_total ?? null),
     };
     const { error: err } = initial?.id
       ? await supabase.from('bills').update(payload).eq('id', initial.id)
@@ -803,6 +814,11 @@ const ContasPagar: React.FC = () => {
                       {b.supplier ? ` · ${b.supplier}` : ''}
                       {b.recurrence !== 'none' ? ` · ${RECURRENCES.find(r => r.value === b.recurrence)?.label}` : ''}
                     </p>
+                    {b.installment_number != null && b.installment_total != null && (
+                      <span className="text-[10px] text-violet-600 bg-violet-50 border border-violet-100 rounded-full px-1.5 py-0.5 font-semibold tabular-nums">
+                        {b.installment_number}/{b.installment_total}
+                      </span>
+                    )}
                     {b.status === 'paid' && b.bank_account && (
                       <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-1.5 py-0.5">
                         {b.bank_account}
