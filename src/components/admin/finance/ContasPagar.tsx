@@ -420,12 +420,51 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
       installment_number: installmentNumber,
       installment_total:  installmentTotal,
     };
+
+    // ── NOVA SÉRIE PARCELADA: geração EAGER — insere todas as parcelas de uma vez ──
+    // Não depende de fn_generate_recurring_bills para séries com número fixo de parcelas.
+    if (isNewInstallment) {
+      const total = Number(numInstallments);
+      // 1. Insere parcela-raiz (nº 1)
+      const { data: parentRow, error: parentErr } = await supabase
+        .from('bills').insert(payload).select('id').single();
+      if (parentErr) {
+        setSaving(false);
+        setError(parentErr.message);
+        return;
+      }
+      // 2. Insere parcelas 2..N imediatamente
+      const children = Array.from({ length: total - 1 }, (_, idx) => ({
+        description:        payload.description,
+        category:           payload.category,
+        supplier:           payload.supplier,
+        amount:             payload.amount,
+        due_date:           addPeriods(form.due_date, form.recurrence, idx + 1),
+        recurrence:         payload.recurrence,
+        recurrence_end:     payload.recurrence_end,
+        document_number:    payload.document_number,
+        notes:              payload.notes,
+        boleto_url:         payload.boleto_url,
+        installment_number: idx + 2,
+        installment_total:  total,
+        parent_bill_id:     parentRow.id,
+      }));
+      if (children.length > 0) {
+        const { error: childErr } = await supabase.from('bills').insert(children);
+        if (childErr) console.error('[BillForm] children insert error:', childErr);
+      }
+      setSaving(false);
+      onSave(total);
+      return;
+    }
+
+    // ── EDIÇÃO ou conta sem parcelamento ──
     const { error: err } = initial?.id
       ? await supabase.from('bills').update(payload).eq('id', initial.id)
       : await supabase.from('bills').insert(payload);
     setSaving(false);
     if (err) { console.error('[BillForm] save error:', err); setError(err.message); return; }
-    onSave(isNewInstallment ? Number(numInstallments) : undefined);
+    onSave();
   };
 
   return (
