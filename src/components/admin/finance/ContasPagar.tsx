@@ -406,7 +406,7 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
       ? await supabase.from('bills').update(payload).eq('id', initial.id)
       : await supabase.from('bills').insert(payload);
     setSaving(false);
-    if (err) { setError(err.message); return; }
+    if (err) { console.error('[BillForm] save error:', err); setError(err.message); return; }
     onSave(isNewInstallment ? Number(numInstallments) : undefined);
   };
 
@@ -644,6 +644,7 @@ const ContasPagar: React.FC = () => {
     if (!payingBill) return;
     setMarking(payingBill.id);
     setPayError(null);
+    const paidDesc = payingBill.description;
     const { error } = await supabase.from('bills').update({
       status:         'paid',
       amount_paid:    Number(data.amount_paid),
@@ -653,10 +654,15 @@ const ContasPagar: React.FC = () => {
     }).eq('id', payingBill.id);
     setMarking(null);
     if (error) {
+      console.error('[ContasPagar] confirmPay error:', error);
       setPayError(error.message || 'Erro ao salvar pagamento. Tente novamente.');
       return;
     }
     setPayingBill(null);
+    // Muda para "Todos os status" para o lançamento pago aparecer na lista
+    setStatusFilter('all');
+    setSuccessMsg(`✓ Pago: ${paidDesc}`);
+    setTimeout(() => setSuccessMsg(null), 5000);
     await load();
   };
 
