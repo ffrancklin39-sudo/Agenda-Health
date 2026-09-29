@@ -3,17 +3,18 @@ import {
   DollarSign, TrendingUp, Users, Target, Calendar,
   Download, ArrowRight, BarChart3, Flame, Zap,
   LayoutDashboard, BookOpen, CreditCard, Receipt,
-  AlertTriangle, Clock, X as XIcon,
+  AlertTriangle, Clock, X as XIcon, UserCheck,
 } from 'lucide-react';
 import { Patient, UserRole } from '../types';
 import { supabase } from '../services/supabaseClient';
-import CaixaDiario      from './admin/finance/CaixaDiario';
-import Lancamentos      from './admin/finance/Lancamentos';
-import ContasPagar      from './admin/finance/ContasPagar';
-import ContasReceber    from './admin/finance/ContasReceber';
-import ContasBancarias  from './admin/finance/ContasBancarias';
+import CaixaDiario            from './admin/finance/CaixaDiario';
+import Lancamentos            from './admin/finance/Lancamentos';
+import ContasPagar            from './admin/finance/ContasPagar';
+import ContasReceber          from './admin/finance/ContasReceber';
+import ContasBancarias        from './admin/finance/ContasBancarias';
+import VisaoGeralFinanceira   from './admin/finance/VisaoGeralFinanceira';
 
-type FinanceTab = 'visao-geral' | 'caixa' | 'lancamentos' | 'contas-pagar' | 'contas-receber' | 'contas-bancarias';
+type FinanceTab = 'visao-geral' | 'leads' | 'caixa' | 'lancamentos' | 'contas-pagar' | 'contas-receber' | 'contas-bancarias';
 
 interface Props { userRole: UserRole; patients: Patient[]; }
 type PeriodKey = 'mes' | 'trimestre' | 'ano' | 'custom';
@@ -21,6 +22,7 @@ const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov
 
 const FINANCE_TABS: { id: FinanceTab; label: string; icon: React.ElementType }[] = [
   { id: 'visao-geral',       label: 'Visão Geral',       icon: LayoutDashboard },
+  { id: 'leads',             label: 'Leads & CRM',       icon: UserCheck },
   { id: 'caixa',             label: 'Caixa',              icon: DollarSign },
   { id: 'lancamentos',       label: 'Lançamentos',        icon: BookOpen },
   { id: 'contas-pagar',      label: 'Contas a Pagar',    icon: CreditCard },
@@ -153,15 +155,16 @@ const Finance: React.FC<Props> = ({ patients }) => {
         ))}
       </div>
 
-      {/* Sub-abas não-visão-geral */}
-      {financeTab === 'caixa'             && <CaixaDiario />}
-      {financeTab === 'lancamentos'       && <Lancamentos />}
-      {financeTab === 'contas-pagar'      && <ContasPagar />}
-      {financeTab === 'contas-receber'    && <ContasReceber />}
-      {financeTab === 'contas-bancarias'  && <ContasBancarias />}
+      {/* Sub-abas */}
+      {financeTab === 'visao-geral'      && <VisaoGeralFinanceira />}
+      {financeTab === 'caixa'            && <CaixaDiario />}
+      {financeTab === 'lancamentos'      && <Lancamentos />}
+      {financeTab === 'contas-pagar'     && <ContasPagar />}
+      {financeTab === 'contas-receber'   && <ContasReceber />}
+      {financeTab === 'contas-bancarias' && <ContasBancarias />}
 
-      {/* Visão Geral — conteúdo original */}
-      {financeTab === 'visao-geral' && (
+      {/* Leads & CRM — conteúdo original de visão-geral */}
+      {financeTab === 'leads' && (
     <div className="space-y-4 animate-in fade-in duration-500">
 
       {/* ── Alertas financeiros ── */}
