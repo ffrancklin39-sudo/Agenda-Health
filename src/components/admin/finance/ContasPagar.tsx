@@ -133,9 +133,10 @@ interface PayBillModalProps {
   onPay: (data: PayData) => void;
   onClose: () => void;
   saving: boolean;
+  serverError?: string | null;
 }
 
-const PayBillModal: React.FC<PayBillModalProps> = ({ bill, onPay, onClose, saving }) => {
+const PayBillModal: React.FC<PayBillModalProps> = ({ bill, onPay, onClose, saving, serverError }) => {
   const [data, setData] = useState<PayData>({
     amount_paid: bill.amount,
     payment_method: 'pix',
@@ -213,9 +214,9 @@ const PayBillModal: React.FC<PayBillModalProps> = ({ bill, onPay, onClose, savin
             />
           </div>
 
-          {error && (
+          {(error || serverError) && (
             <div className="col-span-2 flex items-center gap-2 text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{error}
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{serverError || error}
             </div>
           )}
 
@@ -334,7 +335,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ categories, onSave, o
 interface BillFormProps {
   initial?: Partial<Bill>;
   allCategories: { value: string; label: string }[];
-  onSave: () => void;
+  onSave: (installmentTotal?: number) => void;
   onClose: () => void;
 }
 
@@ -406,7 +407,7 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
       : await supabase.from('bills').insert(payload);
     setSaving(false);
     if (err) { setError(err.message); return; }
-    onSave();
+    onSave(isNewInstallment ? Number(numInstallments) : undefined);
   };
 
   return (
@@ -553,6 +554,8 @@ const ContasPagar: React.FC = () => {
   const [viewMonth, setViewMonth]       = useState<Date | null>(new Date());
   const [payingBill, setPayingBill]     = useState<Bill | null>(null);
   const [marking, setMarking]           = useState<string | null>(null);
+  const [payError, setPayError]         = useState<string | null>(null);
+  const [successMsg, setSuccessMsg]     = useState<string | null>(null);
   const [showCatManager, setShowCatManager] = useState(false);
   const [extraCategories, setExtraCategories] = useState<{ value: string; label: string }[]>([]);
 
@@ -640,15 +643,20 @@ const ContasPagar: React.FC = () => {
   const confirmPay = async (data: PayData) => {
     if (!payingBill) return;
     setMarking(payingBill.id);
-    await supabase.from('bills').update({
+    setPayError(null);
+    const { error } = await supabase.from('bills').update({
       status:         'paid',
       amount_paid:    Number(data.amount_paid),
       payment_method: data.payment_method,
       bank_account:   data.bank_account || null,
       paid_at:        new Date(data.paid_at + 'T12:00:00').toISOString(),
     }).eq('id', payingBill.id);
-    setPayingBill(null);
     setMarking(null);
+    if (error) {
+      setPayError(error.message || 'Erro ao salvar pagamento. Tente novamente.');
+      return;
+    }
+    setPayingBill(null);
     await load();
   };
 
@@ -709,6 +717,19 @@ const ContasPagar: React.FC = () => {
           <Plus className="w-3.5 h-3.5" /> Nova conta
         </button>
       </div>
+
+      {/* Banner de sucesso (auto-dismiss) */}
+      {successMsg && (
+        <div className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <p className="text-xs font-semibold text-emerald-700">{successMsg}</p>
+          </div>
+          <button onClick={() => setSuccessMsg(null)} className="p-1 rounded text-emerald-500 hover:text-emerald-700 transition-colors">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-3">
@@ -871,7 +892,16 @@ const ContasPagar: React.FC = () => {
         <BillForm
           initial={editBill ?? undefined}
           allCategories={allCategories}
-          onSave={() => { setShowForm(false); setEditBill(null); load(); }}
+          onSave={(installmentTotal) => {
+            setShowForm(false);
+            setEditBill(null);
+            if (installmentTotal && installmentTotal > 1) {
+              setViewMonth(null);
+              setSuccessMsg(`${installmentTotal} parcelas criadas — mostrando todos os períodos.`);
+              setTimeout(() => setSuccessMsg(null), 6000);
+            }
+            load();
+          }}
           onClose={() => { setShowForm(false); setEditBill(null); }}
         />
       )}
@@ -882,7 +912,8 @@ const ContasPagar: React.FC = () => {
           bill={payingBill}
           saving={marking === payingBill.id}
           onPay={confirmPay}
-          onClose={() => setPayingBill(null)}
+          serverError={payError}
+          onClose={() => { setPayingBill(null); setPayError(null); }}
         />
       )}
 
