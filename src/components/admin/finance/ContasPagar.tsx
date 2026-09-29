@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Download, RefreshCw, Check, Trash2, AlertTriangle,
   ChevronDown, X, Save, Loader2, Calendar,
-  ChevronLeft, ChevronRight, Tag, Settings2, CreditCard,
+  ChevronLeft, ChevronRight, Tag, Settings2, CreditCard, Repeat,
 } from 'lucide-react';
 import CurrencyInput from 'react-currency-input-field';
 import { supabase } from '../../../services/supabaseClient';
@@ -558,6 +558,79 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
   );
 };
 
+// ─── Modal: Confirmar exclusão de conta recorrente ────────────
+
+interface DeleteConfirmProps {
+  bill: Bill;
+  onSingle: () => void;
+  onFuture: () => void;
+  onClose: () => void;
+  deleting: boolean;
+}
+
+const DeleteConfirmModal: React.FC<DeleteConfirmProps> = ({ bill, onSingle, onFuture, onClose, deleting }) => {
+  const recLabel = RECURRENCES.find(r => r.value === bill.recurrence)?.label?.toLowerCase() ?? bill.recurrence;
+  const isChild  = bill.parent_bill_id !== null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Repeat className="w-4 h-4 text-rose-500" />
+            <h2 className="text-sm font-bold text-slate-800">Excluir conta recorrente</h2>
+          </div>
+          <button onClick={onClose} disabled={deleting}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <p className="text-sm font-semibold text-slate-700 truncate mb-0.5">{bill.description}</p>
+          <p className="text-xs text-slate-400 mb-4">
+            Recorrência <span className="font-medium">{recLabel}</span>
+            {bill.installment_total && ` · parcela ${bill.installment_number ?? '?'}/${bill.installment_total}`}
+            {' · '}vencimento {fmtDate(bill.due_date)}
+          </p>
+
+          <div className="space-y-2 mb-3">
+            {/* Opção 1: só esta */}
+            <button onClick={onSingle} disabled={deleting}
+              className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50 disabled:opacity-50 transition-colors group">
+              <p className="text-sm font-semibold text-slate-700 group-hover:text-amber-700 flex items-center gap-2">
+                <Trash2 className="w-3.5 h-3.5" /> Excluir só esta
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5 group-hover:text-amber-600 pl-5">
+                Remove apenas o lançamento de {fmtDate(bill.due_date)}.
+              </p>
+            </button>
+
+            {/* Opção 2: esta e as futuras */}
+            <button onClick={onFuture} disabled={deleting}
+              className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50 transition-colors group">
+              <p className="text-sm font-semibold text-slate-700 group-hover:text-rose-700 flex items-center gap-2">
+                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Excluir esta e as futuras
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5 group-hover:text-rose-500 pl-5">
+                {isChild
+                  ? `Remove a partir de ${fmtDate(bill.due_date)} e encerra a série.`
+                  : 'Remove esta e todas as ocorrências geradas.'}
+              </p>
+            </button>
+          </div>
+
+          <button onClick={onClose} disabled={deleting}
+            className="w-full py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 rounded-xl transition-colors">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Componente principal ─────────────────────────────────────
 
 type FilterStatus = 'all' | 'pending' | 'overdue' | 'paid';
@@ -574,6 +647,8 @@ const ContasPagar: React.FC = () => {
   const [marking, setMarking]           = useState<string | null>(null);
   const [payError, setPayError]         = useState<string | null>(null);
   const [successMsg, setSuccessMsg]     = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Bill | null>(null);
+  const [deleting, setDeleting]         = useState(false);
   const [showCatManager, setShowCatManager] = useState(false);
   const [extraCategories, setExtraCategories] = useState<{ value: string; label: string }[]>([]);
 
@@ -686,10 +761,62 @@ const ContasPagar: React.FC = () => {
     await load();
   };
 
-  const deleteBill = async (id: string) => {
-    if (!confirm('Excluir esta conta?')) return;
-    await supabase.from('bills').delete().eq('id', id);
-    setBills(prev => prev.filter(b => b.id !== id));
+  // Excluir só esta ocorrência
+  const deleteOnlyThis = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    await supabase.from('bills').delete().eq('id', deleteTarget.id);
+    setBills(prev => prev.filter(b => b.id !== deleteTarget.id));
+    setDeleting(false);
+    setDeleteTarget(null);
+  };
+
+  // Excluir esta e todas as futuras na mesma série
+  const deleteFutureAll = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+
+    const isRoot   = deleteTarget.parent_bill_id === null;
+    const rootId   = deleteTarget.parent_bill_id ?? deleteTarget.id;
+    const cutDate  = deleteTarget.due_date;
+
+    if (isRoot) {
+      // Apaga a conta-raiz + TODOS os filhos (série inteira)
+      await supabase.from('bills').delete().eq('parent_bill_id', rootId);
+      await supabase.from('bills').delete().eq('id', rootId);
+    } else {
+      // Apaga esta filha + todas as irmãs com due_date >= cutDate
+      await supabase.from('bills').delete()
+        .eq('parent_bill_id', rootId)
+        .gte('due_date', cutDate);
+
+      // Atualiza recurrence_end da raiz para o dia anterior ao corte,
+      // impedindo que fn_generate_recurring_bills recrie as ocorrências
+      const prev = new Date(cutDate + 'T00:00:00');
+      prev.setDate(prev.getDate() - 1);
+      await supabase.from('bills').update({
+        recurrence_end: prev.toISOString().slice(0, 10),
+        installment_total: deleteTarget.installment_number != null
+          ? deleteTarget.installment_number - 1  // total real = última parcela mantida
+          : null,
+      }).eq('id', rootId);
+    }
+
+    setDeleting(false);
+    setDeleteTarget(null);
+    await load();
+  };
+
+  // Abre modal para recorrentes; apaga direto para avulsas
+  const deleteBill = (bill: Bill) => {
+    if (bill.recurrence !== 'none' || bill.parent_bill_id !== null) {
+      setDeleteTarget(bill);
+    } else {
+      if (!confirm('Excluir esta conta?')) return;
+      supabase.from('bills').delete().eq('id', bill.id).then(() =>
+        setBills(prev => prev.filter(b => b.id !== bill.id))
+      );
+    }
   };
 
   const saveCategories = async (cats: { value: string; label: string }[]) => {
@@ -902,7 +1029,7 @@ const ContasPagar: React.FC = () => {
                     className="p-1.5 rounded-lg bg-slate-50 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
                     <ChevronDown className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => deleteBill(b.id)} title="Excluir"
+                  <button onClick={() => deleteBill(b)} title="Excluir"
                     className="p-1.5 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -949,6 +1076,17 @@ const ContasPagar: React.FC = () => {
           categories={allCategories}
           onSave={saveCategories}
           onClose={() => setShowCatManager(false)}
+        />
+      )}
+
+      {/* Modal: confirmar exclusão de conta recorrente */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          bill={deleteTarget}
+          onSingle={deleteOnlyThis}
+          onFuture={deleteFutureAll}
+          onClose={() => !deleting && setDeleteTarget(null)}
+          deleting={deleting}
         />
       )}
     </div>
