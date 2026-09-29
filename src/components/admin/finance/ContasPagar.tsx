@@ -462,8 +462,42 @@ const BillForm: React.FC<BillFormProps> = ({ initial, allCategories, onSave, onC
     const { error: err } = initial?.id
       ? await supabase.from('bills').update(payload).eq('id', initial.id)
       : await supabase.from('bills').insert(payload);
+    if (err) { setSaving(false); console.error('[BillForm] save error:', err); setError(err.message); return; }
+
+    // Ao editar a RAIZ de uma série parcelada, completa as filhas faltantes
+    // (corrige séries criadas antes da geração eager — salvar novamente conserta)
+    if (initial?.id && !initial.parent_bill_id && isInstallmentMode && payload.installment_total) {
+      const total = payload.installment_total;
+      const { data: existing } = await supabase
+        .from('bills').select('installment_number').eq('parent_bill_id', initial.id);
+      const existingNums = new Set((existing ?? []).map((c: any) => Number(c.installment_number)));
+      const missing = [];
+      for (let i = 2; i <= total; i++) {
+        if (!existingNums.has(i)) {
+          missing.push({
+            description:        payload.description,
+            category:           payload.category,
+            supplier:           payload.supplier,
+            amount:             payload.amount,
+            due_date:           addPeriods(form.due_date, form.recurrence, i - 1),
+            recurrence:         payload.recurrence,
+            recurrence_end:     payload.recurrence_end,
+            document_number:    payload.document_number,
+            notes:              payload.notes,
+            boleto_url:         payload.boleto_url,
+            installment_number: i,
+            installment_total:  total,
+            parent_bill_id:     initial.id,
+          });
+        }
+      }
+      if (missing.length > 0) {
+        const { error: fillErr } = await supabase.from('bills').insert(missing);
+        if (fillErr) console.error('[BillForm] fill missing installments error:', fillErr);
+      }
+    }
+
     setSaving(false);
-    if (err) { console.error('[BillForm] save error:', err); setError(err.message); return; }
     onSave();
   };
 
