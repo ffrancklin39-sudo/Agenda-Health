@@ -516,13 +516,24 @@ const Agenda: React.FC<Props> = ({
       const fromISO = from.toISOString().split('T')[0];
       const toISO   = to.toISOString().split('T')[0];
 
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*, patients(name)')
-        .gte('date_time', fromISO)
-        .lte('date_time', toISO + 'T23:59:59')
-        .order('date_time', { ascending: true })
-        .limit(5000);
+      // O Supabase devolve no máximo 1000 linhas por consulta: busca em páginas até acabar.
+      // (ordem por data + id garante que nenhuma linha se repita ou seja pulada entre páginas)
+      const PAGE = 1000;
+      let data: any[] = [];
+      let error: any = null;
+      for (let start = 0; ; start += PAGE) {
+        const res = await supabase
+          .from('appointments')
+          .select('*, patients(name)')
+          .gte('date_time', fromISO)
+          .lte('date_time', toISO + 'T23:59:59')
+          .order('date_time', { ascending: true })
+          .order('id', { ascending: true })
+          .range(start, start + PAGE - 1);
+        if (res.error) { error = res.error; break; }
+        data = data.concat(res.data || []);
+        if (!res.data || res.data.length < PAGE) break;
+      }
       if (error) throw error;
       setAppointments(
         (data || []).map((a: any): Appointment => ({
