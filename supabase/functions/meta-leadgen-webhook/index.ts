@@ -33,7 +33,7 @@ const GRAPH_API_VERSION = 'v19.0';
 
 /** Verifica a assinatura HMAC-SHA256 enviada pela Meta no header X-Hub-Signature-256. */
 async function verifyMetaSignature(body: Uint8Array, signatureHeader: string | null): Promise<boolean> {
-  if (!APP_SECRET) return true; // se não configurou o secret, passa (retrocompatível)
+  if (!APP_SECRET) return false; // sem secret configurado = rejeita (falha fechada)
   if (!signatureHeader?.startsWith('sha256=')) return false;
   const expected = signatureHeader.slice('sha256='.length);
   const key = await crypto.subtle.importKey(
@@ -47,7 +47,10 @@ async function verifyMetaSignature(body: Uint8Array, signatureHeader: string | n
   const computed = Array.from(new Uint8Array(sig))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
-  return computed === expected;
+  if (computed.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < computed.length; i++) diff |= computed.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
 }
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -139,7 +142,7 @@ Deno.serve(async (req: Request) => {
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
 
-    if (mode === 'subscribe' && token === VERIFY_TOKEN && challenge) {
+    if (VERIFY_TOKEN && mode === 'subscribe' && token === VERIFY_TOKEN && challenge) {
       return new Response(challenge, { status: 200 });
     }
     return new Response('Forbidden', { status: 403 });
@@ -172,8 +175,9 @@ Deno.serve(async (req: Request) => {
       }
     } catch (err) {
       console.error('Erro ao processar webhook da Meta:', err);
-      // Mesmo em erro, respondemos 200 — a Meta reenvia agressivamente em
-      // caso de erro/timeout, e o upsert idempotente evita duplicatas.
+      // Erro de processamento: responde 500 para a Meta REENVIAR o evento
+      // (o upsert por meta_leadgen_id é idempotente, então não duplica).
+      return new Response('ERROR', { status: 500 });
     }
     return new Response('EVENT_RECEIVED', { status: 200 });
   }

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Patient, PaymentFull, PAYMENT_METHOD_LABELS, Contract, ContractItem, ClinicService } from '../types';
+import DOMPurify from 'dompurify';
 import { generateTextContent } from '../services/geminiService';
 import { phoneMatchKey, toTitleCase } from '../phoneUtils';
 import AvatarUpload from './AvatarUpload';
@@ -368,12 +369,17 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploadingFile(true);
+    const ALLOWED_EXT = ['jpg','jpeg','png','gif','webp','jfif','pdf','doc','docx','xls','xlsx','txt','csv'];
+    const MAX_BYTES = 20 * 1024 * 1024;
+    const rejected: string[] = [];
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (!ALLOWED_EXT.includes(ext) || file.size > MAX_BYTES) { rejected.push(file.name); continue; }
       const folder = ['jpg','jpeg','png','gif','webp','jfif'].includes(ext) ? 'Imagens' : 'Arquivos';
-      const storagePath = `patients/${patient.id}/${folder}/${Date.now()}_${file.name}`;
-      const { error: upErr } = await supabase.storage.from('patient-files').upload(storagePath, file, { upsert: true });
-      if (upErr) { console.error(upErr); continue; }
+      const safeName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(-80);
+      const storagePath = `patients/${patient.id}/${folder}/${Date.now()}_${safeName}`;
+      const { error: upErr } = await supabase.storage.from('patient-files').upload(storagePath, file, { upsert: false });
+      if (upErr) { console.error(upErr); rejected.push(file.name); continue; }
       await supabase.from('patient_files').insert({
         patient_id: patient.id,
         file_name: file.name,
@@ -392,6 +398,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
     setPatientFiles(data || []);
     setUploadingFile(false);
     e.target.value = '';
+    if (rejected.length) alert(`Não foi possível enviar: ${rejected.join(', ')}\n(Permitidos: imagens, PDF, Word, Excel, TXT/CSV até 20 MB.)`);
   };
 
   const fileIcon = (type: string | null) => {
@@ -1131,7 +1138,7 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
                                 {hasHtml ? (
                                   <div
                                     className="prose prose-sm max-w-none text-slate-700 text-xs leading-relaxed"
-                                    dangerouslySetInnerHTML={{ __html: rec.content_html! }}
+                                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(rec.content_html!, { USE_PROFILES: { html: true } }) }}
                                   />
                                 ) : rec.content_text ? (
                                   <p className="text-xs text-slate-700 whitespace-pre-wrap">{rec.content_text}</p>

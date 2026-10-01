@@ -178,7 +178,8 @@ const App: React.FC = () => {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [agendaRefreshTrigger, setAgendaRefreshTrigger] = useState(0);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
-  const [userRole, setUserRole] = useState<UserRole>('ADMIN');
+  const [userRole, setUserRole] = useState<UserRole>('RECEPTIONIST'); // menor privilégio até o papel real chegar do banco
+  const [roleLoaded, setRoleLoaded] = useState(false);
   const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({});
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -221,7 +222,8 @@ const App: React.FC = () => {
 
   // Busca role do usuário + permissões dinâmicas da tabela role_permissions
   useEffect(() => {
-    if (!session) return;
+    if (!session) { setRoleLoaded(false); return; }
+    setRoleLoaded(false);
     supabase
       .from('profiles')
       .select('role')
@@ -229,7 +231,8 @@ const App: React.FC = () => {
       .single()
       .then(({ data }) => {
         const role = (data?.role as UserRole) || 'RECEPTIONIST';
-        if (data?.role) setUserRole(role);
+        setUserRole(role); // sem perfil ou erro = menor privilégio
+        setRoleLoaded(true);
         // Carrega permissões do papel deste usuário
         supabase
           .from('role_permissions')
@@ -527,7 +530,7 @@ const App: React.FC = () => {
         >
           <div className={nopad ? 'h-full' : 'max-w-7xl mx-auto'}>
             <div className={`bg-white rounded-2xl shadow-sm ${nopad ? 'h-full overflow-hidden' : 'px-6 py-6 lg:px-8 lg:py-8'}`}>
-              {loading && patients.length === 0 ? (
+              {(loading && patients.length === 0) || !roleLoaded ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4">
                   <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
                   <p className="text-slate-400 text-sm font-medium">Sincronizando dados...</p>

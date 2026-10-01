@@ -30,7 +30,7 @@ const AvatarUpload: React.FC<Props> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) { setError('Selecione uma imagem.'); return; }
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) { setError('Selecione uma imagem.'); return; }
     if (file.size > 5 * 1024 * 1024) { setError('Imagem deve ter menos de 5MB.'); return; }
 
     setError(null);
@@ -40,10 +40,10 @@ const AvatarUpload: React.FC<Props> = ({
     const localUrl = URL.createObjectURL(file);
     setPreview(localUrl);
 
-    const ext = file.name.split('.').pop();
+    const ext = ({ 'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif' } as Record<string,string>)[file.type] || 'jpg';
     const path = `${folder}/${Date.now()}.${ext}`;
 
-    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, { upsert: false });
     if (upErr) { setError('Erro ao fazer upload.'); setUploading(false); return; }
 
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);

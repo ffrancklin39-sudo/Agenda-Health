@@ -18,6 +18,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const WAHA_BASE_URL    = Deno.env.get('WAHA_BASE_URL') ?? '';
+if (!WAHA_BASE_URL.startsWith('https://')) console.warn('WAHA_BASE_URL deve usar https://');
 const WAHA_SESSION     = Deno.env.get('WAHA_SESSION')  ?? 'default';
 const WAHA_API_KEY     = Deno.env.get('WAHA_API_KEY')  ?? '';
 
@@ -72,8 +73,10 @@ function buildMessage(bills: Bill[], recipientName: string): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const overdue  = bills.filter(b => b.status === 'overdue');
-  const upcoming = bills.filter(b => b.status === 'pending');
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isLate   = (b: Bill) => b.status === 'overdue' || (b.status === 'pending' && b.due_date < todayStr);
+  const overdue  = bills.filter(isLate);
+  const upcoming = bills.filter(b => !isLate(b));
 
   let msg = `🔔 *Lembrete Financeiro — Clínica Candia*\n`;
   msg    += `Olá, ${recipientName}! Aqui está o resumo das contas.\n`;
@@ -109,7 +112,22 @@ function buildMessage(bills: Bill[], recipientName: string): string {
   return msg;
 }
 
-Deno.serve(async () => {
+
+// Autenticação por segredo compartilhado (CRON_SECRET) — a anon key é pública e NÃO basta.
+function isAuthorized(req: Request): boolean {
+  const secret = Deno.env.get('CRON_SECRET') ?? '';
+  if (!secret) return false; // sem segredo configurado = bloqueia tudo (falha fechada)
+  const given = req.headers.get('x-cron-secret') ?? '';
+  if (given.length !== secret.length) return false;
+  let diff = 0;
+  for (let i = 0; i < secret.length; i++) diff |= secret.charCodeAt(i) ^ given.charCodeAt(i);
+  return diff === 0;
+}
+
+Deno.serve(async (req: Request) => {
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ ok: false, error: 'Não autorizado' }), { status: 401 });
+  }
   try {
     // ── 1. Buscar contas vencidas ou vencendo em ≤3 dias ──────────────────
     const today = new Date();

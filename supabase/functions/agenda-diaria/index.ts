@@ -12,6 +12,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE);
 const DAYS_PT = ['Domingo','Segunda-feira','Terca-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sabado'];
 const MONTHS_PT = ['janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 
+const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+
 function formatDate(date: Date): string {
   return `${DAYS_PT[date.getDay()]}, ${date.getDate()} de ${MONTHS_PT[date.getMonth()]} de ${date.getFullYear()}`;
 }
@@ -23,12 +25,12 @@ function formatTime(dateStr: string): string {
 
 function buildEmailHtml(profName: string, specialty: string, date: Date, appointments: any[]): string {
   const dateLabel = formatDate(date);
-  const firstName = profName.split(' ')[0];
+  const firstName = esc(profName.split(' ')[0]);
 
   const rows = appointments.map((apt, i) => {
     const time     = formatTime(apt.date_time);
-    const patient  = apt.patients?.name || 'Paciente';
-    const service  = apt.services?.name || 'Consulta';
+    const patient  = esc(apt.patients?.name || 'Paciente');
+    const service  = esc(apt.services?.name || 'Consulta');
     const duration = apt.duration_minutes || 60;
     const bg       = i % 2 === 0 ? '#f8fafc' : '#ffffff';
     return `
@@ -51,7 +53,7 @@ function buildEmailHtml(profName: string, specialty: string, date: Date, appoint
     <div style="background:#123451;padding:32px 32px 24px">
       <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#7dd3fc;text-transform:uppercase;letter-spacing:0.1em">Agenda do dia seguinte</p>
       <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff">Boa noite, ${firstName}!</h1>
-      <p style="margin:8px 0 0;font-size:14px;color:#94a3b8">${specialty}</p>
+      <p style="margin:8px 0 0;font-size:14px;color:#94a3b8">${esc(specialty)}</p>
     </div>
 
     <!-- Date banner -->
@@ -93,7 +95,22 @@ function buildEmailHtml(profName: string, specialty: string, date: Date, appoint
 </html>`;
 }
 
+
+// Autenticação por segredo compartilhado (CRON_SECRET) — a anon key é pública e NÃO basta.
+function isAuthorized(req: Request): boolean {
+  const secret = Deno.env.get('CRON_SECRET') ?? '';
+  if (!secret) return false; // sem segredo configurado = bloqueia tudo (falha fechada)
+  const given = req.headers.get('x-cron-secret') ?? '';
+  if (given.length !== secret.length) return false;
+  let diff = 0;
+  for (let i = 0; i < secret.length; i++) diff |= secret.charCodeAt(i) ^ given.charCodeAt(i);
+  return diff === 0;
+}
+
 serve(async (req) => {
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ ok: false, error: 'Nao autorizado' }), { status: 401 });
+  }
   try {
     // Calcula "amanha" no fuso de Brasilia (UTC-3)
     const now       = new Date();
@@ -146,10 +163,11 @@ serve(async (req) => {
       });
 
       const json = await res.json();
-      results.push({ prof: prof.name, email: prof.email, status: res.status, resend: json });
+      results.push({ prof: prof.name, status: res.status, ok: res.ok });
     }
 
-    return new Response(JSON.stringify({ ok: true, sent: results.length, results }), {
+    const failed = results.filter(r => !r.ok).length;
+    return new Response(JSON.stringify({ ok: failed === 0, sent: results.length - failed, failed, results }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
