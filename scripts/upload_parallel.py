@@ -9,8 +9,8 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.request, urllib.error
 
-SUPABASE_URL = "https://iudghjdmfcxjcpspeify.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZGdoamRtZmN4amNwc3BlaWZ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODMwMjk1NCwiZXhwIjoyMDgzODc4OTU0fQ.cnD-3_9kfasLNi8W9WMlGmRIJj9JOH8H8wDqP-HFYCc"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")  # nunca commitar a chave
 BUCKET      = "patient-files"
 BASE_PATH   = Path("/sessions/elegant-jolly-curie/mnt/d457fd08-5b27-41bd-b089-c974a170f56c-backup feegow/Client")
 META_FILE   = Path(__file__).parent / "migration_output" / "patient_files_meta.json"

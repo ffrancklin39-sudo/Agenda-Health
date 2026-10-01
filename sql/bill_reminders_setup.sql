@@ -13,7 +13,7 @@ COMMENT ON COLUMN bills.boleto_url IS 'Link do boleto (PDF ou página de pagamen
 INSERT INTO clinic_settings (key, value)
 VALUES (
   'reminder_contacts',
-  '[{"name":"Fellipe","phone":"5561998356364"},{"name":"Roberto","phone":"5561994300500"}]'
+  '[{"name":"<NOME>","phone":"<5561999999999>"}]'
 )
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 

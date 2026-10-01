@@ -254,7 +254,7 @@ SintesIA foi projetado para eventualmente atender múltiplas clínicas como SaaS
 
 Edge Function `bill-reminders` já deployada:
 - Busca contas vencidas ou vencendo em ≤3 dias
-- Envia WhatsApp para: Fellipe (61 99835-6364) e Roberto (61 99430-0500)
+- Envia WhatsApp para os contatos configurados em `clinic_settings.reminder_contacts` (telefones não ficam no repositório)
 - Contatos configurados em `clinic_settings.reminder_contacts`
 - **Status atual:** aguardando migração WAHA → API oficial Meta
 - Cron automático: `0 11 * * *` (08:00 BRT) via pg_cron — configurar após validar envio

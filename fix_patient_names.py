@@ -3,10 +3,10 @@ fix_patient_names.py
 Corrige todos os nomes de pacientes no Supabase para Title Case.
 Execução: python fix_patient_names.py
 """
-import urllib.request, json, re
+import os, urllib.request, json, re
 
-SUPABASE_URL = "https://iudghjdmfcxjcpspeify.supabase.co"
-SERVICE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZGdoamRtZmN4amNwc3BlaWZ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODMwMjk1NCwiZXhwIjoyMDgzODc4OTU0fQ.cnD-3_9kfasLNi8W9WMlGmRIJj9JOH8H8wDqP-HFYCc"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SERVICE_KEY  = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")  # nunca commitar a chave
 
 HEADERS = {
     "apikey": SERVICE_KEY,

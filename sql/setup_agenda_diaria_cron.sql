@@ -24,7 +24,7 @@ select cron.schedule(
       url     := 'https://iudghjdmfcxjcpspeify.supabase.co/functions/v1/agenda-diaria',
       headers := jsonb_build_object(
         'Content-Type',  'application/json',
-        'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZGdoamRtZmN4amNwc3BlaWZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMDI5NTQsImV4cCI6MjA4Mzg3ODk1NH0.f2rcdjPuxyx2REEviDRObE-Sn1D4ytb4_HwTDjW8Xao'
+        'Authorization', 'Bearer <CRON_SECRET>'  -- definir via supabase secrets; NUNCA colar chaves reais aqui
       ),
       body    := '{}'::jsonb
     ) as request_id;

@@ -8,7 +8,7 @@
 //
 // Variáveis de ambiente (Supabase Secrets):
 //   WAHA_API_KEY   — API Key do WAHA (configurada no docker do WAHA)
-//   WAHA_BASE_URL  — URL base do WAHA, ex: http://204.216.153.179:3000
+//   WAHA_BASE_URL  — URL base do WAHA, ex: https://waha.seudominio.com.br
 //   WAHA_SESSION   — Nome da sessão WAHA (normalmente "default")
 //   SUPABASE_URL             — injetada automaticamente
 //   SUPABASE_SERVICE_ROLE_KEY— injetada automaticamente
@@ -17,7 +17,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const WAHA_BASE_URL    = Deno.env.get('WAHA_BASE_URL') ?? 'http://204.216.153.179:3000';
+const WAHA_BASE_URL    = Deno.env.get('WAHA_BASE_URL') ?? '';
 const WAHA_SESSION     = Deno.env.get('WAHA_SESSION')  ?? 'default';
 const WAHA_API_KEY     = Deno.env.get('WAHA_API_KEY')  ?? '';
 
