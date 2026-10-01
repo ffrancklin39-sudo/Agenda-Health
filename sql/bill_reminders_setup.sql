@@ -22,6 +22,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 --   Supabase Dashboard → Database → Extensions → pg_cron → Enable
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
+-- (Na funcao bill-reminders: 'Verify JWT' DESLIGADO — ela confere o x-cron-secret.)
 -- ── 4. Agendar o job diário às 8h (horário de Brasília = 11:00 UTC) ───────────
 -- Remove job anterior se existir
 SELECT cron.unschedule('bill-reminders-daily') WHERE EXISTS (

@@ -6,13 +6,13 @@
 -- 1. Extensoes habilitadas: pg_cron e pg_net
 --    (Dashboard -> Database -> Extensions -> buscar "cron" e "http")
 -- 2. Edge Function "agenda-diaria" deployada
--- 3. Secret RESEND_API_KEY configurada na funcao
+-- 3. Secret RESEND_API_KEY e CRON_SECRET configurados na funcao
+-- 4. Na funcao agenda-diaria: 'Verify JWT' DESLIGADO (a propria funcao confere o x-cron-secret)
 
--- Remove cron antigo se existir
-select cron.unschedule('agenda-diaria-email') 
-where exists (
-  select 1 from cron.job where jobname = 'agenda-diaria-email'
-);
+-- Remove os agendamentos antigos (havia 2 chamando a mesma funcao = e-mail duplicado)
+select cron.unschedule(jobname)
+from cron.job
+where jobname in ('agenda-diaria-email', 'agenda-diaria-profissionais');
 
 -- Cria o cron: toda noite as 23:00 UTC (20:00 Brasilia), de domingo a sexta
 select cron.schedule(
