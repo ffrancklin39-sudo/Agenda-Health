@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, UserPlus, Calendar, Edit2, DollarSign, X,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, ShieldCheck, Loader2
 } from 'lucide-react';
-import { Patient, PatientStatus } from '../types';
+import { Patient, PatientStatus, UserRole } from '../types';
+import { supabase } from '../services/supabaseClient';
+import { podeReceberDisparo, rotuloConsentimento, ORIGENS_MASSA, ORIGEM_LABEL, OrigemOptIn } from '../lib/consentimento';
 
 interface Props {
   patients: Patient[];
@@ -12,7 +14,10 @@ interface Props {
   onRefresh: () => void;
   session?: any;
   initialSearch?: string;
+  userRole: UserRole;
 }
+
+interface ResultadoMassa { marcados: number; ja_sim: number; pulados_opt_out: number; pulados_nao: number; nao_encontrados: number }
 
 const ALPHABET = ['TODOS','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
 const ITEMS_PER_PAGE = 20;
@@ -32,7 +37,7 @@ function formatBirth(dateStr?: string | null) {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch = '' }) => {
+const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch = '', userRole }) => {
   const [searchTerm, setSearchTerm] = useState(initialSearch);
 
   // Sincroniza busca global vinda do header
@@ -41,6 +46,41 @@ const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch
   const [showInactive, setShowInactive] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [soElegiveis, setSoElegiveis] = useState(false);
+
+  // Marcação de opt-in em massa (somente ADMIN; o banco confere de novo)
+  const [massaAberta, setMassaAberta] = useState(false);
+  const [massaOrigem, setMassaOrigem] = useState<OrigemOptIn>('form_com_consentimento');
+  const [massaEvidencia, setMassaEvidencia] = useState('');
+  const [massaConfirma, setMassaConfirma] = useState('');
+  const [massaSalvando, setMassaSalvando] = useState(false);
+  const [massaErro, setMassaErro] = useState<string | null>(null);
+  const [massaResultado, setMassaResultado] = useState<ResultadoMassa | null>(null);
+  const isAdmin = userRole === 'ADMIN';
+  const FRASE_CONFIRMA = 'CONFIRMO';
+
+  const abrirMassa = () => {
+    setMassaErro(null); setMassaResultado(null); setMassaConfirma(''); setMassaEvidencia('');
+    setMassaAberta(true);
+  };
+
+  const executarMassa = async () => {
+    setMassaErro(null);
+    if (massaEvidencia.trim().length < 20) { setMassaErro('Descreva a evidência (mín. 20 caracteres).'); return; }
+    if (massaConfirma.trim().toUpperCase() !== FRASE_CONFIRMA) { setMassaErro(`Digite ${FRASE_CONFIRMA} para confirmar.`); return; }
+    const ids = Array.from(selectedIds).filter(Boolean);
+    if (ids.length === 0) { setMassaErro('Nenhum cadastro selecionado.'); return; }
+    if (ids.length > 500) { setMassaErro('Máximo de 500 cadastros por vez.'); return; }
+    setMassaSalvando(true);
+    const { data, error } = await supabase.rpc('marcar_opt_in_em_massa', {
+      p_ids: ids, p_origem: massaOrigem, p_evidencia: massaEvidencia.trim(),
+    });
+    setMassaSalvando(false);
+    if (error) { setMassaErro(error.message); return; }
+    const r = (Array.isArray(data) ? data[0] : data) as ResultadoMassa | undefined;
+    setMassaResultado(r ?? { marcados: 0, ja_sim: 0, pulados_opt_out: 0, pulados_nao: 0, nao_encontrados: 0 });
+    setSelectedIds(new Set());
+  };
 
   const filtered = useMemo(() => {
     let list = patients;
@@ -49,6 +89,10 @@ const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch
       list = list.filter(p => p.status === 'discarded');
     } else {
       list = list.filter(p => p.status !== 'discarded');
+    }
+
+    if (soElegiveis) {
+      list = list.filter(p => podeReceberDisparo(p));
     }
 
     if (letterFilter !== 'TODOS') {
@@ -66,7 +110,7 @@ const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch
     }
 
     return list.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [patients, searchTerm, letterFilter, showInactive]);
+  }, [patients, searchTerm, letterFilter, showInactive, soElegiveis]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const paginated = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
@@ -131,6 +175,23 @@ const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch
               onChange={e => handleSearch(e.target.value)}
             />
           </div>
+          <button
+            onClick={() => { setSoElegiveis(v => !v); setPage(1); }}
+            title="Mostra só quem tem opt-in, sem opt-out e com telefone válido"
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border transition-colors ${
+              soElegiveis ? 'bg-emerald-600 text-white border-emerald-600' : 'text-slate-600 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <ShieldCheck size={12} /> Elegíveis para disparo
+          </button>
+          {isAdmin && selectedIds.size > 0 && (
+            <button
+              onClick={abrirMassa}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700"
+            >
+              Marcar opt-in ({selectedIds.size})
+            </button>
+          )}
           <div className="flex-1" />
           <span className="text-xs text-slate-400">{filtered.length} pacientes</span>
           <button
@@ -258,6 +319,9 @@ const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch
                     {/* Celular */}
                     <td className="px-2 py-1 text-slate-600 truncate">
                       {patient.phone || patient.cell2 || ''}
+                      {(() => { const r = rotuloConsentimento(patient); return (
+                        <span className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${r.cor}`}>{r.texto}</span>
+                      ); })()}
                     </td>
 
                     {/* Últ. Agend. */}
@@ -337,6 +401,62 @@ const PatientList: React.FC<Props> = ({ patients, onSelectPatient, initialSearch
         </div>
 
       </div>
+
+      {massaAberta && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4">
+            <h3 className="text-sm font-bold text-slate-800">Marcar opt-in em massa</h3>
+            {massaResultado ? (
+              <>
+                <ul className="text-sm text-slate-700 space-y-1">
+                  <li><b>{massaResultado.marcados}</b> marcados como opt-in</li>
+                  <li>{massaResultado.ja_sim} já tinham opt-in</li>
+                  <li>{massaResultado.pulados_opt_out} pulados por opt-out (opt-out sempre vence)</li>
+                  <li>{massaResultado.pulados_nao} pulados por recusa ("Recusou" só muda na ficha, um a um)</li>
+                  {massaResultado.nao_encontrados > 0 && <li>{massaResultado.nao_encontrados} não encontrados</li>}
+                </ul>
+                <p className="text-xs text-slate-400">Registrado com seu usuário, data e hora no histórico de cada cadastro.</p>
+                <div className="flex justify-end">
+                  <button onClick={() => setMassaAberta(false)} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg">Fechar</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-600">
+                  Você vai registrar que <b>{selectedIds.size}</b> cadastro(s) <b>aceitaram</b> receber mensagens no WhatsApp.
+                  Só faça isso se tiver a prova do aceite de cada um. Quem tem opt-out ou recusou não é alterado.
+                </p>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 tracking-wider mb-1">Origem</label>
+                  <select value={massaOrigem} onChange={e => setMassaOrigem(e.target.value as OrigemOptIn)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm">
+                    {ORIGENS_MASSA.map(o => <option key={o} value={o}>{ORIGEM_LABEL[o]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 tracking-wider mb-1">Evidência *</label>
+                  <textarea value={massaEvidencia} onChange={e => setMassaEvidencia(e.target.value)}
+                    placeholder="Ex.: fichas de cadastro em papel com aceite de WhatsApp (modelo v1, vigente desde 01/10/2026), arquivadas na recepção"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm min-h-[72px]" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 tracking-wider mb-1">Digite {FRASE_CONFIRMA} para confirmar</label>
+                  <input value={massaConfirma} onChange={e => setMassaConfirma(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm" />
+                </div>
+                {massaErro && <p className="text-sm text-rose-600 bg-rose-50 px-3 py-2 rounded-lg">{massaErro}</p>}
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setMassaAberta(false)} className="px-4 py-2 text-sm text-slate-500 border border-slate-200 rounded-lg">Cancelar</button>
+                  <button onClick={executarMassa} disabled={massaSalvando}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg disabled:opacity-60">
+                    {massaSalvando && <Loader2 size={14} className="animate-spin" />} Marcar opt-in
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

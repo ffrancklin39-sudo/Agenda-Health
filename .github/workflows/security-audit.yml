@@ -33,10 +33,11 @@ jobs:
           echo "Verificando variáveis VITE_ sensíveis no source..."
 
           # VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY são públicas por design do Supabase.
+          # VITE_CHATWOOT_URL é só o endereço público do painel (o app recusa URL com token/parâmetros).
           # Qualquer outra variável VITE_ em import.meta.env é suspeita.
           SUSPICIOUS=$(grep -rn "import\.meta\.env\.VITE_" src/ \
             --include="*.ts" --include="*.tsx" | \
-            grep -v "VITE_SUPABASE_URL\|VITE_SUPABASE_ANON_KEY" || true)
+            grep -v "VITE_SUPABASE_URL\|VITE_SUPABASE_ANON_KEY\|VITE_CHATWOOT_URL" || true)
 
           if [ -n "$SUSPICIOUS" ]; then
             echo "FALHA: Variáveis VITE_ sensíveis encontradas no source (serão expostas no bundle):"

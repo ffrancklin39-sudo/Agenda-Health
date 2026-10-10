@@ -116,6 +116,16 @@ export interface Patient {
   lead_temperature_reason?: string;
   ai_next_action?: string;
   ai_message_draft?: string;
+
+  // Consentimento WhatsApp (LGPD) — ver src/lib/consentimento.ts
+  opt_in?: 'sim' | 'incerto' | 'nao';
+  opt_in_origem?: string | null;
+  opt_in_data?: string | null;
+  opt_in_evidencia?: string | null;
+  opt_out?: boolean;
+  opt_out_data?: string | null;
+  /** Gerado pelo banco a partir de phone. Nunca enviar em insert/update. */
+  phone_e164?: string | null;
 }
 
 export interface Professional {

@@ -71,21 +71,46 @@ interface LeadgenChange {
   };
 }
 
+// ── Consentimento (opt-in WhatsApp) ─────────────────────────────────────
+// META_CONSENT_KEYS: nomes (separados por vírgula) da pergunta/checkbox de
+//   aceite no formulário da Meta. Padrão abaixo.
+// META_CONSENT_TEXTO_VIGENCIA: data (AAAA-MM-DD) em que o texto do aceite
+//   exibido no formulário passou a valer. Sem ela não há evidência suficiente
+//   e o lead fica 'incerto' mesmo marcando o checkbox.
+const CONSENT_KEYS = (Deno.env.get('META_CONSENT_KEYS') ?? 'consentimento_whatsapp,aceite_whatsapp,whatsapp_opt_in')
+  .split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+const CONSENT_VIGENCIA = (Deno.env.get('META_CONSENT_TEXTO_VIGENCIA') ?? '').trim();
+
+interface DisclaimerResponse { checkbox_key?: string; is_checked?: string | boolean }
+interface LeadData {
+  field_data: FieldDatum[];
+  custom_disclaimer_responses: DisclaimerResponse[];
+  created_time?: string;
+}
+
 /** Busca os dados reais do lead na Graph API a partir do leadgen_id. */
-async function fetchLeadData(leadgenId: string): Promise<FieldDatum[]> {
-  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${leadgenId}?access_token=${PAGE_ACCESS_TOKEN}`;
-  const res = await fetch(url);
+async function fetchLeadData(leadgenId: string): Promise<LeadData> {
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(leadgenId)}`
+    + '?fields=field_data,custom_disclaimer_responses,created_time';
+  // Token no header (não na URL) para não aparecer em logs de proxy.
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${PAGE_ACCESS_TOKEN}` } });
   const json = await res.json();
   if (!res.ok) {
-    throw new Error(`Graph API error: ${JSON.stringify(json)}`);
+    // Só o código do erro: a resposta da Meta pode ecoar dados do lead.
+    throw new Error(`Graph API error ${res.status} code=${json?.error?.code ?? '?'}`);
   }
-  return (json.field_data ?? []) as FieldDatum[];
+  return {
+    field_data: (json.field_data ?? []) as FieldDatum[],
+    custom_disclaimer_responses: (json.custom_disclaimer_responses ?? []) as DisclaimerResponse[],
+    created_time: json.created_time,
+  };
 }
 
 /** Converte o array field_data da Meta num objeto simples { campo: valor }. */
 function mapFieldData(fieldData: FieldDatum[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const f of fieldData) {
+    if (!f?.name) continue;
     map[f.name.toLowerCase()] = f.values?.[0] ?? '';
   }
   return map;
@@ -99,12 +124,35 @@ function pick(map: Record<string, string>, candidates: string[]): string {
   return '';
 }
 
+const SIM = new Set(['sim', 'yes', 'true', '1', 'aceito', 'concordo', 'autorizo', 'checked']);
+const NAO = new Set(['nao', 'não', 'no', 'false', '0', 'recuso', 'nao_aceito', 'não aceito']);
+
+/** 'sim' | 'nao' | null. Ausente ou ambíguo = null (fica 'incerto'). */
+function lerConsentimento(lead: LeadData, map: Record<string, string>): { valor: 'sim' | 'nao' | null; campo: string | null } {
+  for (const d of lead.custom_disclaimer_responses) {
+    const key = String(d?.checkbox_key ?? '').toLowerCase();
+    if (!CONSENT_KEYS.includes(key)) continue;
+    const v = String(d?.is_checked ?? '').toLowerCase();
+    if (v === 'true' || v === '1') return { valor: 'sim', campo: key };
+    if (v === 'false' || v === '0') return { valor: 'nao', campo: key };
+    return { valor: null, campo: key };
+  }
+  for (const key of CONSENT_KEYS) {
+    if (!(key in map)) continue;
+    const v = String(map[key] ?? '').trim().toLowerCase();
+    if (SIM.has(v)) return { valor: 'sim', campo: key };
+    if (NAO.has(v)) return { valor: 'nao', campo: key };
+    return { valor: null, campo: key };
+  }
+  return { valor: null, campo: null };
+}
+
 async function handleLeadgenChange(change: LeadgenChange) {
   const { leadgen_id, ad_id, form_id } = change.value;
   if (!leadgen_id) return;
 
-  const fieldData = await fetchLeadData(leadgen_id);
-  const map = mapFieldData(fieldData);
+  const lead = await fetchLeadData(leadgen_id);
+  const map = mapFieldData(lead.field_data);
 
   const name = pick(map, ['full_name', 'nome', 'name']) || 'Lead Instagram (sem nome)';
   const email = pick(map, ['email', 'e-mail']);
@@ -128,9 +176,43 @@ async function handleLeadgenChange(change: LeadgenChange) {
     .upsert(row, { onConflict: 'meta_leadgen_id', ignoreDuplicates: true });
 
   if (error) {
-    console.error('Erro ao inserir lead do Instagram:', error);
-    throw error;
+    console.error('Erro ao inserir lead do Instagram: code=', error.code);   // sem dados do lead
+    throw new Error(`insert failed code=${error.code}`);
   }
+
+  // Consentimento: registra pelo gancho do banco (que nunca desfaz opt-out
+  // nem transforma 'nao' em 'sim').
+  const { data: saved, error: findErr } = await supabase
+    .from('patients').select('id').eq('meta_leadgen_id', leadgen_id).maybeSingle();
+  if (findErr || !saved?.id) {
+    console.error('Lead Ads: não achei o lead para registrar consentimento. code=', findErr?.code ?? 'not_found');
+    return;
+  }
+
+  const cons = lerConsentimento(lead, map);
+  let valor = cons.valor;
+  if (valor === 'sim' && !/^\d{4}-\d{2}-\d{2}$/.test(CONSENT_VIGENCIA)) {
+    console.warn('Lead Ads: META_CONSENT_TEXTO_VIGENCIA ausente/inválida — aceite registrado como incerto.');
+    valor = null;
+  }
+  const evidencia = [
+    'lead_ad',
+    `form=${form_id ?? '?'}`,
+    `ad=${ad_id ?? '?'}`,
+    `leadgen=${leadgen_id}`,
+    `campo=${cons.campo ?? 'ausente'}`,
+    `resposta=${cons.valor ?? 'ausente_ou_ambigua'}`,
+    `respondido_em=${lead.created_time ?? '?'}`,
+    `texto_aceite_vigente_desde=${CONSENT_VIGENCIA || 'nao_configurado'}`,
+  ].join(' ');
+
+  const { error: rpcErr } = await supabase.rpc('registrar_consentimento_entrada', {
+    p_patient_id: saved.id,
+    p_origem: 'lead_ad',
+    p_consentimento: valor,
+    p_evidencia: evidencia,
+  });
+  if (rpcErr) console.error('Lead Ads: falha ao registrar consentimento. code=', rpcErr.code);
 }
 
 Deno.serve(async (req: Request) => {
@@ -174,7 +256,7 @@ Deno.serve(async (req: Request) => {
         }
       }
     } catch (err) {
-      console.error('Erro ao processar webhook da Meta:', err);
+      console.error('Erro ao processar webhook da Meta:', err instanceof Error ? err.message : 'erro');
       // Erro de processamento: responde 500 para a Meta REENVIAR o evento
       // (o upsert por meta_leadgen_id é idempotente, então não duplica).
       return new Response('ERROR', { status: 500 });

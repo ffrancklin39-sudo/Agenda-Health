@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Download, RefreshCw, MessageCircle, Check, Loader2, TrendingUp } from 'lucide-react';
 import { supabase } from '../../../services/supabaseClient';
+import { confirmarContato } from '../../../lib/consentimento';
 import PaymentRegisterModal from '../PaymentRegisterModal';
 import { Patient } from '../../../types';
 
@@ -175,7 +176,8 @@ export default function ContasReceber() {
                       {isOverdue && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5">Vencido</span>}
                       <span className="text-sm font-semibold text-slate-700 tabular-nums">{fmt(p.amount)}</span>
                       {pat?.phone && (
-                        <a href={`https://wa.me/55${pat.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+                        <a href={`https://wa.me/55${pat.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                          onClick={e => { if (!confirmarContato(pat, 'transacional')) e.preventDefault(); }}
                           className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors">
                           <MessageCircle className="w-3.5 h-3.5" />
                         </a>
@@ -209,7 +211,8 @@ export default function ContasReceber() {
                     </div>
                     <span className="text-sm font-semibold text-slate-700 tabular-nums">{fmt(p.price ?? 0)}</span>
                     {p.phone && (
-                      <a href={`https://wa.me/55${p.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+                      <a href={`https://wa.me/55${p.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                        onClick={e => { if (!confirmarContato(p, 'transacional')) e.preventDefault(); }}
                         className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors">
                         <MessageCircle className="w-3.5 h-3.5" />
                       </a>

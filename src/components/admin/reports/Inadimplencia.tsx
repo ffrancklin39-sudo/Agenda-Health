@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Download, RefreshCw, AlertTriangle, CheckCircle2, Phone, MessageCircle } from 'lucide-react';
 import { supabase } from '../../../services/supabaseClient';
+import { confirmarContato } from '../../../lib/consentimento';
 
 interface PaymentRow {
   id: string;
@@ -23,6 +24,8 @@ interface PatientRow {
   status: string;
   appointment_date: string | null;
   service_id: string | null;
+  opt_in?: string | null;
+  opt_out?: boolean | null;
 }
 
 interface DebtRecord {
@@ -48,7 +51,7 @@ export default function Inadimplencia({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     Promise.all([
       supabase.from('vw_payments_full').select('id,patient_id,patient_name,service_name,amount,status,payment_method,payment_date,due_date,created_at').in('status', ['pending']),
-      supabase.from('patients').select('id,name,phone,price,status,appointment_date,service_id').in('status', CONFIRMED),
+      supabase.from('patients').select('id,name,phone,price,status,appointment_date,service_id,opt_in,opt_out').in('status', CONFIRMED),
     ]).then(([payRes, patRes]) => {
       setPayments((payRes.data ?? []) as PaymentRow[]);
       // Pacientes confirmados SEM pagamento registrado
@@ -191,8 +194,8 @@ export default function Inadimplencia({ onBack }: { onBack: () => void }) {
                   <p className="text-xs text-slate-400">{d.daysOverdue} dias em atraso · {d.payments.length} pendência{d.payments.length > 1 ? 's' : ''}</p>
                 </div>
                 {d.phone && (
-                  <a href={`https://wa.me/55${d.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
-                    onClick={e => e.stopPropagation()}
+                  <a href={`https://wa.me/55${d.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                    onClick={e => { e.stopPropagation(); if (!confirmarContato(patients.find(p => p.id === d.patientId), 'transacional')) e.preventDefault(); }}
                     className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors">
                     <MessageCircle className="w-3.5 h-3.5" />
                   </a>

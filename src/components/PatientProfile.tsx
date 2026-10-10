@@ -7,13 +7,14 @@ import {
   Image, Clock, Receipt, ChevronLeft, ChevronRight,
   AlertCircle, ShieldPlus, Activity, Trash2,
   Plus, DollarSign, TrendingUp, CheckCircle2, XCircle,
-  ScrollText, Sparkles, ExternalLink,
+  ScrollText, Sparkles, ExternalLink, MessageCircle,
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
-import { Patient, PaymentFull, PAYMENT_METHOD_LABELS, Contract, ContractItem, ClinicService } from '../types';
+import { Patient, UserRole, PaymentFull, PAYMENT_METHOD_LABELS, Contract, ContractItem, ClinicService } from '../types';
 import DOMPurify from 'dompurify';
 import { generateTextContent } from '../services/geminiService';
-import { phoneMatchKey, toTitleCase } from '../phoneUtils';
+import { paraE164, phoneMatchKey, toTitleCase } from '../phoneUtils';
+import ConsentimentoWhatsApp from './ConsentimentoWhatsApp';
 import AvatarUpload from './AvatarUpload';
 import PaymentRegisterModal from './admin/PaymentRegisterModal';
 import AnamnesisTab from './AnamnesisTab';
@@ -35,7 +36,8 @@ type SideTab =
   | 'arquivos'
   | 'timeline'
   | 'financeiro'
-  | 'contratos';
+  | 'contratos'
+  | 'whatsapp';
 
 interface ClinicalRecord {
   id: string;
@@ -73,6 +75,7 @@ interface Props {
   onClose: () => void;
   onRefresh?: () => void;
   onDeleted?: () => void;
+  userRole: UserRole;
 }
 
 /* -------------------------------------------------
@@ -112,6 +115,7 @@ const NAV_ITEMS: { id: SideTab; label: string; icon: React.ElementType; badge?: 
   { id: 'timeline',     label: 'Linha do Tempo',       icon: Clock        },
   { id: 'financeiro',   label: 'Recibos / Financeiro', icon: Receipt      },
   { id: 'contratos',    label: 'Contratos',            icon: ScrollText   },
+  { id: 'whatsapp',     label: 'WhatsApp / Consentimento', icon: MessageCircle },
 ];
 
 /* -------------------------------------------------
@@ -130,7 +134,7 @@ const Placeholder: React.FC<{ icon: React.ElementType; label: string }> = ({ ico
 /* -------------------------------------------------
    Componente principal
 ------------------------------------------------- */
-const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDeleted }) => {
+const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDeleted, userRole }) => {
   const [activeTab, setActiveTab]     = useState<SideTab>('dados');
   const [isSaving,  setIsSaving]      = useState(false);
   const [saveMsg,   setSaveMsg]       = useState('');
@@ -306,12 +310,28 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
       };
 
       if (patient.id === 'NEW') {
-        const key = phoneMatchKey(form.phone);
-        if (key) {
-          const { data: existing } = await supabase.from('patients').select('id, phone');
-          if (existing?.find((p: any) => phoneMatchKey(p.phone) === key)) {
+        // Duplicidade por telefone: consulta no banco pelo número normalizado
+        // (antes baixava a tabela inteira e parava em 1000 linhas).
+        const e164 = paraE164(form.phone);
+        if (e164) {
+          let { data: existing, error: dupErr } = await supabase
+            .from('patients').select('id').eq('phone_e164', e164).limit(1);
+          if (dupErr?.code === '42703') {
+            // Migration de consentimento ainda não aplicada (coluna não existe):
+            // cai na comparação antiga por chave de telefone.
+            const key = phoneMatchKey(form.phone);
+            const all = await supabase.from('patients').select('id, phone');
+            dupErr = all.error;
+            existing = (all.data ?? []).filter((p: any) => phoneMatchKey(p.phone) === key);
+          }
+          if (dupErr) throw dupErr;
+          if (existing && existing.length > 0) {
             alert('Ja existe um paciente com esse telefone.');
             onRefresh?.(); onClose(); return;
+          }
+        } else if (phoneMatchKey(form.phone)) {
+          if (!confirm('Telefone fora do padrão brasileiro (DDD + número). Ele não poderá receber WhatsApp. Salvar mesmo assim?')) {
+            setIsSaving(false); return;
           }
         }
         const { error } = await supabase.from('patients').insert([{ ...payload, status: 'lead' }]);
@@ -1162,6 +1182,9 @@ const PatientProfile: React.FC<Props> = ({ patient, onClose, onRefresh, onDelete
             <PatientFinanceiro patient={patient} />
           )}
 
+          {activeTab === 'whatsapp' && patient?.id && patient.id !== 'NEW' && (
+            <ConsentimentoWhatsApp patientId={String(patient.id)} userRole={userRole} />
+          )}
           {activeTab === 'contratos' && (
             <PatientContratos patient={patient} />
           )}

@@ -82,3 +82,50 @@ export const phoneMatchKey = (value: string | null | undefined): string => {
   // O resultado sempre será apenas o DDD + 8 dígitos (ex: 6198356364)
   return cleaned; 
 };
+// ── E.164 (WhatsApp) ─────────────────────────────────────────────────────────
+// ESPELHO EXATO de public.normalizar_telefone_e164() no banco
+// (supabase/migrations/20261010120000_whatsapp_consentimento.sql).
+// Mudou a regra aqui, mude lá — e vice-versa.
+const DDDS_BR = new Set([
+  '11','12','13','14','15','16','17','18','19',
+  '21','22','24','27','28',
+  '31','32','33','34','35','37','38',
+  '41','42','43','44','45','46','47','48','49',
+  '51','53','54','55',
+  '61','62','63','64','65','66','67','68','69',
+  '71','73','74','75','77','79',
+  '81','82','83','84','85','86','87','88','89',
+  '91','92','93','94','95','96','97','98','99',
+]);
+
+/** Converte para +55DDNNNNNNNNN. Retorna null se não for um telefone brasileiro válido. */
+export const paraE164 = (raw: string | null | undefined): string | null => {
+  let value = String(raw ?? '').trim();
+  if (!value) return null;
+
+  if (value.includes('@')) {
+    const suffix = (value.split('@')[1] ?? '').toLowerCase();
+    if (suffix !== 'c.us' && suffix !== 's.whatsapp.net') return null;
+    value = value.split('@')[0];
+  }
+
+  const digits = value.replace(/\D/g, '');
+  let nat: string;
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) nat = digits.slice(2);
+  else if (digits.length === 10 || digits.length === 11) nat = digits;
+  else return null;
+
+  const ddd = nat.slice(0, 2);
+  let num = nat.slice(2);
+  if (!DDDS_BR.has(ddd)) return null;
+
+  if (num.length === 9) {
+    if (num[0] !== '9') return null;
+  } else if (num.length === 8) {
+    if ('6789'.includes(num[0])) num = '9' + num;          // celular antigo sem o 9º dígito
+    else if (!'2345'.includes(num[0])) return null;        // nem celular nem fixo
+  } else {
+    return null;
+  }
+  return `+55${ddd}${num}`;
+};
