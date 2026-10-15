@@ -84,7 +84,7 @@ export const phoneMatchKey = (value: string | null | undefined): string => {
 };
 // ── E.164 (WhatsApp) ─────────────────────────────────────────────────────────
 // ESPELHO EXATO de public.normalizar_telefone_e164() no banco
-// (supabase/migrations/20261010120000_whatsapp_consentimento.sql).
+// (supabase/migrations/20261015234055_whatsapp_consentimento.sql).
 // Mudou a regra aqui, mude lá — e vice-versa.
 const DDDS_BR = new Set([
   '11','12','13','14','15','16','17','18','19',

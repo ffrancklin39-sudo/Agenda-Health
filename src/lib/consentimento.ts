@@ -1,7 +1,7 @@
 // consentimento.ts — regra ÚNICA de consentimento para WhatsApp (LGPD).
 //
 // Fonte da verdade: public.pode_receber_disparo() no banco
-// (supabase/migrations/20261010120000_whatsapp_consentimento.sql).
+// (supabase/migrations/20261015234055_whatsapp_consentimento.sql).
 // Este arquivo é o espelho para a interface (filtros, selos, botões).
 // QUALQUER envio ativo real (n8n, Chatwoot, Edge Function) deve chamar a
 // função do banco imediatamente antes de enviar — ela também confere a

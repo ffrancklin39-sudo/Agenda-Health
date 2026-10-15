@@ -1,6 +1,6 @@
 -- ============================================================================
--- 20261010120000_whatsapp_consentimento_down.sql  (DOWN / reversão)
--- Desfaz supabase/migrations/20261010120000_whatsapp_consentimento.sql.
+-- 20261015234055_whatsapp_consentimento_down.sql  (DOWN / reversão)
+-- Desfaz supabase/migrations/20261015234055_whatsapp_consentimento.sql.
 --
 -- Fica FORA de supabase/migrations de propósito: a CLI do Supabase não deve
 -- aplicá-lo automaticamente. Rode à mão no SQL Editor, só se precisar reverter.
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS public.consentimento_arquivo (
   dados         jsonb NOT NULL,
   arquivado_em  timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE public.consentimento_arquivo IS 'Cópia do consentimento WhatsApp feita pela reversão da migration 20261010120000. Sem acesso pelo app.';
+COMMENT ON TABLE public.consentimento_arquivo IS 'Cópia do consentimento WhatsApp feita pela reversão da migration 20261015234055. Sem acesso pelo app.';
 ALTER TABLE public.consentimento_arquivo ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.consentimento_arquivo FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON SEQUENCE public.consentimento_arquivo_id_seq FROM PUBLIC, anon, authenticated;

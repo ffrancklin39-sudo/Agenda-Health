@@ -9,8 +9,8 @@ set -euo pipefail
 
 PGBIN="${PGBIN:-/usr/lib/postgresql/16/bin}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-UP="$ROOT/supabase/migrations/20261010120000_whatsapp_consentimento.sql"
-DOWN="$ROOT/supabase/rollback/20261010120000_whatsapp_consentimento_down.sql"
+UP="$ROOT/supabase/migrations/20261015234055_whatsapp_consentimento.sql"
+DOWN="$ROOT/supabase/rollback/20261015234055_whatsapp_consentimento_down.sql"
 TESTS="$ROOT/supabase/tests"
 WORK="$(mktemp -d)"
 PORT="${PORT:-54329}"

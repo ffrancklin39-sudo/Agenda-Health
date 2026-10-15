@@ -3,8 +3,8 @@
 Camada de consentimento exigida antes de qualquer integração com a API oficial
 do WhatsApp (Meta Cloud API + Chatwoot). **Esta fase não envia mensagens.**
 
-Migration: `supabase/migrations/20261010120000_whatsapp_consentimento.sql`
-Reversão: `supabase/rollback/20261010120000_whatsapp_consentimento_down.sql`
+Migration: `supabase/migrations/20261015234055_whatsapp_consentimento.sql`
+Reversão: `supabase/rollback/20261015234055_whatsapp_consentimento_down.sql`
 Testes locais: `PGBIN=/usr/lib/postgresql/16/bin supabase/tests/run_local.sh`
 
 ## Regra única

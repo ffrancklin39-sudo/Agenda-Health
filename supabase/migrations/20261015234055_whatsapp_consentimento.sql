@@ -1,5 +1,5 @@
 -- ============================================================================
--- 20261010120000_whatsapp_consentimento.sql  (UP)
+-- 20261015234055_whatsapp_consentimento.sql  (UP)
 -- Camada de consentimento (opt-in / opt-out) para WhatsApp — LGPD.
 --
 -- Garantias desta migration:
@@ -12,7 +12,7 @@
 --     ou cujo telefone está na lista de supressão.
 --   * Toda mudança de consentimento feita por usuário logado passa pelas
 --     funções (RPC) abaixo; escrita direta nas colunas é recusada.
---   * Reversão: supabase/rollback/20261010120000_whatsapp_consentimento_down.sql
+--   * Reversão: supabase/rollback/20261015234055_whatsapp_consentimento_down.sql
 --
 -- Sem escopo de clínica (tenant): o esquema atual não tem clinic_id.
 -- Quando o multi-tenant chegar, whatsapp_supressao e consentimento_eventos
@@ -22,6 +22,10 @@
 -- numa transação, e o SQL Editor executa o script inteiro como uma só
 -- transação (falhou no meio = nada fica aplicado).
 -- ============================================================================
+
+-- Se a tabela patients estiver ocupada, desiste em 5 s em vez de entrar na
+-- fila e travar o uso da clínica (é só rodar de novo depois).
+SET LOCAL lock_timeout = '5s';
 
 -- ── 1. Tipo do opt-in ─────────────────────────────────────────────────────
 DO $$ BEGIN
@@ -182,10 +186,14 @@ COMMENT ON TABLE public.whatsapp_supressao IS 'Telefones que pediram opt-out. Bl
 ALTER TABLE public.whatsapp_supressao ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.whatsapp_supressao FROM PUBLIC, anon;
 GRANT SELECT ON public.whatsapp_supressao TO authenticated;
-DROP POLICY IF EXISTS "supressao_select_logado" ON public.whatsapp_supressao;
-CREATE POLICY "supressao_select_logado" ON public.whatsapp_supressao
-  FOR SELECT TO authenticated USING (true);
--- Sem políticas de INSERT/UPDATE/DELETE: só as funções SECURITY DEFINER escrevem.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                 AND tablename = 'whatsapp_supressao' AND policyname = 'supressao_select_logado') THEN
+    CREATE POLICY "supressao_select_logado" ON public.whatsapp_supressao
+      FOR SELECT TO authenticated USING (true);
+  END IF;
+END $$;
+-- Sem políticas de escrita: só as funções SECURITY DEFINER escrevem.
 
 -- ── 5. Trilha de auditoria (somente inserção) ─────────────────────────────
 CREATE TABLE IF NOT EXISTS public.consentimento_eventos (
@@ -210,9 +218,13 @@ ALTER TABLE public.consentimento_eventos ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.consentimento_eventos FROM PUBLIC, anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.consentimento_eventos FROM authenticated;
 GRANT SELECT ON public.consentimento_eventos TO authenticated;
-DROP POLICY IF EXISTS "consent_eventos_select_logado" ON public.consentimento_eventos;
-CREATE POLICY "consent_eventos_select_logado" ON public.consentimento_eventos
-  FOR SELECT TO authenticated USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                 AND tablename = 'consentimento_eventos' AND policyname = 'consent_eventos_select_logado') THEN
+    CREATE POLICY "consent_eventos_select_logado" ON public.consentimento_eventos
+      FOR SELECT TO authenticated USING (true);
+  END IF;
+END $$;
 
 -- ── 6. Funções auxiliares internas ────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.consentimento_eh_admin()
@@ -375,13 +387,13 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_consentimento_before ON public.patients;
-CREATE TRIGGER trg_consentimento_before
+-- CREATE OR REPLACE (Postgres 14+): idempotente sem remover antes, o que o painel
+-- do Supabase trata como comando destrutivo e pede confirmação.
+CREATE OR REPLACE TRIGGER trg_consentimento_before
   BEFORE INSERT OR UPDATE ON public.patients
   FOR EACH ROW EXECUTE FUNCTION public.trg_consentimento_before();
 
-DROP TRIGGER IF EXISTS trg_consentimento_after ON public.patients;
-CREATE TRIGGER trg_consentimento_after
+CREATE OR REPLACE TRIGGER trg_consentimento_after
   AFTER INSERT OR UPDATE ON public.patients
   FOR EACH ROW EXECUTE FUNCTION public.trg_consentimento_after();
 

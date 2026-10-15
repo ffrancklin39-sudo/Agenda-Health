@@ -1,5 +1,5 @@
 -- ============================================================================
--- consentimento_test.sql — testes da migration 20261010120000.
+-- consentimento_test.sql — testes da migration 20261015234055.
 -- Dados 100% fictícios (nomes "Teste", números da faixa 9 0000-xxxx).
 -- Roda após a migration UP. Qualquer falha aborta com ERRO (ON_ERROR_STOP).
 -- ============================================================================
