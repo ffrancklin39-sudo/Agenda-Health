@@ -26,3 +26,15 @@ sql/delete_lid_duplicates.sql
 .DS_Store
 Thumbs.db
 supabase/.temp
+
+# Dados reais de pacientes (LGPD) — manter SOMENTE fora do git
+private-data/
+sql/import_*feegow*.sql
+sql/update_*feegow*.sql
+scripts/update_patients_*.sql
+scripts/*.csv
+scripts/*.json
+*.dump
+*.bak
+__pycache__/
+*.pyc

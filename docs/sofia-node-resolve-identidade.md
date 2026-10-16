@@ -12,8 +12,8 @@ Node único de **Code** (JavaScript, "Run Once for Each Item"), posicionado imed
 // para o telefone real, uma única vez, logo após o Webhook.
 // Qualquer node depois deste consome from_real/to_real — nunca payload.from/to bruto.
 
-const WAHA_BASE_URL = 'http://204.216.153.179:3000';
-const WAHA_API_KEY = 'sintesia123';
+const WAHA_BASE_URL = 'https://<WAHA_HOST>';
+const WAHA_API_KEY = '<WAHA_API_KEY>' // definir no n8n (credencial), nunca no repo;
 const WAHA_SESSION = 'default'; // ajustar por sessão quando os 3 chips estiverem separados
 
 const payload = $input.item.json.payload ?? $input.item.json;

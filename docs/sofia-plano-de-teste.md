@@ -52,8 +52,8 @@ Francklin escolheu: trocar o webhook da sessão WAHA atual temporariamente pro p
 **Como fazer (via API do WAHA):**
 
 ```bash
-curl -X PUT http://204.216.153.179:3000/api/sessions/default \
-  -H "X-Api-Key: sintesia123" \
+curl -X PUT https://<HOST>/api/sessions/default \
+  -H "X-Api-Key: <WAHA_API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
     "config": {
@@ -67,7 +67,7 @@ curl -X PUT http://204.216.153.179:3000/api/sessions/default \
   }'
 ```
 
-Substituir `<seu-n8n>` pela URL real do n8n (domínio `n8n.usesintesia.com.br` se já propagado, senão `http://204.216.153.179:5678`). Pra reverter depois do teste, repetir o mesmo comando trocando `ClinicaCandiaSofiaTeste` por `ClinicaCandia`.
+Substituir `<seu-n8n>` pela URL real do n8n (domínio `n8n.usesintesia.com.br` se já propagado, senão `https://<HOST>`). Pra reverter depois do teste, repetir o mesmo comando trocando `ClinicaCandiaSofiaTeste` por `ClinicaCandia`.
 
 ⚠️ Confirmar a URL/sessão exata antes de rodar — `GET /api/sessions/default` mostra a config atual pra comparar.
 

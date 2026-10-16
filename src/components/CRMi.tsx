@@ -3,6 +3,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea
 import { supabase } from '../services/supabaseClient';
 import { Patient, PatientHistory, Professional } from '../types';
 import { phoneMatchKey } from '../phoneUtils';
+import { avaliarContatoManual, podeReceberDisparo, rotuloConsentimento } from '../lib/consentimento';
 import {
   Phone, MessageCircle, DollarSign, Check, UserPlus, BellRing, Bell,
   Edit2, Trash2, AlarmClock, AlignLeft, X, Stethoscope, Search, Clock, History,
@@ -87,6 +88,7 @@ const CRMi: React.FC<CRMiProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [soElegiveis, setSoElegiveis] = useState(false);
 
   // Modal de Pagamento
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -485,8 +487,14 @@ const CRMi: React.FC<CRMiProps> = ({
     }
   };
 
-  const openWhatsApp = (phone: string) => {
+  // Contato manual pelo CRM = prospecção: opt-out e 'Recusou' bloqueiam;
+  // 'Sem registro' libera com aviso (decisão 10/10/2026).
+  const openWhatsApp = (patient: Patient) => {
+    const phone = patient.phone;
     if (!phone) return;
+    const aval = avaliarContatoManual(patient, 'prospeccao');
+    if (aval.nivel === 'bloqueado') { alert(`Contato bloqueado: ${aval.motivo}`); return; }
+    if (aval.nivel === 'aviso' && !confirm(`${aval.motivo}\n\nAbrir o WhatsApp mesmo assim?`)) return;
     const clean = phone.replace(/\D/g, '');
     if (!clean) return;
     const number = clean.startsWith('55') ? clean : `55${clean}`;
@@ -579,6 +587,8 @@ const CRMi: React.FC<CRMiProps> = ({
       const isLead = (p as any).is_lead === true;
       const hasFunnelStatus = ACTIVE_FUNNEL_STATUSES.includes((p.status || '').toLowerCase());
       if (!isLead && !hasFunnelStatus) return false;
+
+      if (soElegiveis && !podeReceberDisparo(p)) return false;
 
       // Filtro de busca
       if (searchQuery.trim()) {
@@ -917,6 +927,13 @@ const CRMi: React.FC<CRMiProps> = ({
                 </button>
               )}
             </div>
+            <button
+              onClick={() => setSoElegiveis(v => !v)}
+              title="Mostra só quem tem opt-in, sem opt-out e com telefone válido"
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors shrink-0 ${soElegiveis ? 'bg-emerald-600 text-white border-emerald-600' : 'text-slate-600 border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
+            >
+              Elegíveis para disparo
+            </button>
             <button
               onClick={openAddModal}
               className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors shrink-0"
@@ -1267,7 +1284,10 @@ const CRMi: React.FC<CRMiProps> = ({
 
                                       {/* Ações */}
                                       <div className="flex items-center gap-1 pt-1.5 border-t border-slate-100">
-                                        <button onClick={e => { e.stopPropagation(); openWhatsApp(patient.phone); }} disabled={hasNoPhone} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors disabled:opacity-30" title={hasNoPhone ? 'Telefone não identificado' : 'WhatsApp'}><MessageCircle size={14} /></button>
+                                        {(() => { const r = rotuloConsentimento(patient); const bloq = avaliarContatoManual(patient, 'prospeccao').nivel === 'bloqueado'; return (<>
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${r.cor}`} title="Consentimento WhatsApp">{r.texto}</span>
+                                        <button onClick={e => { e.stopPropagation(); openWhatsApp(patient); }} disabled={hasNoPhone || bloq} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors disabled:opacity-30" title={hasNoPhone ? 'Telefone não identificado' : bloq ? 'Contato bloqueado (opt-out ou recusa)' : 'WhatsApp'}><MessageCircle size={14} /></button>
+                                        </>); })()}
                                         <button onClick={e => { e.stopPropagation(); openEditModal(patient); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Editar"><Edit2 size={14} /></button>
                                         <button onClick={e => { e.stopPropagation(); openHistoryPanel(patient); }} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors" title="Histórico"><History size={14} /></button>
                                         <button onClick={e => { e.stopPropagation(); onSelectPatient?.(String(patient.id)); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="Abrir prontuário"><AlarmClock size={14} /></button>

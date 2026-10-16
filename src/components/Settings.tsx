@@ -129,6 +129,7 @@ const ALL_MODULES = [
   { id: 'dashboard',   label: 'Dashboard',    group: 'Operacional'    },
   { id: 'agenda',      label: 'Agenda',        group: 'Operacional'    },
   { id: 'kanban',      label: 'CRMi',          group: 'Operacional'    },
+  { id: 'whatsapp',    label: 'WhatsApp / Atendimento', group: 'Operacional' },
   { id: 'patients',    label: 'Pacientes',     group: 'Operacional'    },
   { id: 'tasks',       label: 'Tarefas',       group: 'Operacional'    },
   { id: 'services',    label: 'Serviços',      group: 'Operacional'    },

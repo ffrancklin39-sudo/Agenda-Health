@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Users, Calendar, Zap, Wallet, Briefcase,
   Settings as SettingsIcon, Kanban as KanbanIcon, ChevronLeft, ChevronRight,
-  UserCheck, TrendingUp, ListChecks, BarChart3, FileText, ChevronDown,
+  UserCheck, TrendingUp, ListChecks, BarChart3, FileText, ChevronDown, MessageCircle,
 } from 'lucide-react';
+import { getChatwootUrl } from '../lib/chatwoot';
 import { UserRole, Patient } from '../types';
 
 interface SidebarProps {
@@ -20,7 +21,11 @@ interface MenuItem {
   icon: React.ElementType;
   roles: string[];
   ready: boolean;
+  /** Link externo (abre em nova aba) em vez de trocar de aba. */
+  external?: boolean;
 }
+
+const CHATWOOT_URL = getChatwootUrl();
 
 interface MenuGroup {
   id: string;
@@ -38,6 +43,7 @@ const GROUPS: MenuGroup[] = [
       { id: 'dashboard',   label: 'Dashboard',   icon: LayoutDashboard, roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
       { id: 'agenda',      label: 'Agenda',       icon: Calendar,        roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
       { id: 'kanban',      label: 'CRMi',         icon: KanbanIcon,      roles: ['ADMIN','RECEPTIONIST'],          ready: true  },
+      { id: 'whatsapp',    label: 'WhatsApp / Atendimento', icon: MessageCircle, roles: ['ADMIN','RECEPTIONIST'], ready: true, external: true },
       { id: 'patients',    label: 'Pacientes',    icon: Users,           roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
       { id: 'tasks',       label: 'Tarefas',      icon: ListChecks,      roles: ['ADMIN','DOCTOR','RECEPTIONIST'], ready: true  },
       { id: 'automations', label: 'Automacoes',   icon: Zap,             roles: ['ADMIN','DOCTOR'],                ready: false },
@@ -88,7 +94,36 @@ interface NavItemProps {
   onClick: () => void;
   indent?: boolean;
 }
-const NavItem: React.FC<NavItemProps> = ({ item, active, collapsed, onClick, indent }) => (
+const NavItem: React.FC<NavItemProps> = ({ item, active, collapsed, onClick, indent }) => {
+  if (item.external) {
+    const base = `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group border border-transparent ${collapsed ? 'justify-center' : indent ? 'pl-4' : ''}`;
+    if (!CHATWOOT_URL) {
+      return (
+        <button
+          type="button"
+          disabled
+          title="Atendimento não configurado: defina VITE_CHATWOOT_URL (endereço https do Chatwoot) no Vercel."
+          className={`${base} text-slate-300 cursor-not-allowed`}
+        >
+          <item.icon className="w-4 h-4 shrink-0 text-slate-300" />
+          {!collapsed && <span className="font-semibold text-sm tracking-wide">{item.label}</span>}
+        </button>
+      );
+    }
+    return (
+      <a
+        href={CHATWOOT_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={collapsed ? item.label : 'Abre o Chatwoot em nova aba'}
+        className={`${base} text-slate-500 hover:bg-slate-200/60 hover:text-slate-900`}
+      >
+        <item.icon className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-600" />
+        {!collapsed && <span className="font-semibold text-sm tracking-wide">{item.label}</span>}
+      </a>
+    );
+  }
+  return (
   <button
     key={item.id}
     onClick={onClick}
@@ -104,7 +139,8 @@ const NavItem: React.FC<NavItemProps> = ({ item, active, collapsed, onClick, ind
     <item.icon className={`w-4 h-4 shrink-0 transition-colors ${active ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
     {!collapsed && <span className="font-semibold text-sm tracking-wide">{item.label}</span>}
   </button>
-);
+  );
+};
 
 // ─── Sub-componente: grupo colapsável ────────────────────────
 

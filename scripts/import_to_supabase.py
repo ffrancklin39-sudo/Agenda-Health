@@ -27,8 +27,8 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # CONFIGURAÇÃO — não precisa alterar nada
 # ---------------------------------------------------------------------------
-SUPABASE_URL = "https://iudghjdmfcxjcpspeify.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZGdoamRtZmN4amNwc3BlaWZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMDI5NTQsImV4cCI6MjA4Mzg3ODk1NH0.f2rcdjPuxyx2REEviDRObE-Sn1D4ytb4_HwTDjW8Xao"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")  # nunca commitar a chave
 
 HEADERS = {
     "apikey":        SUPABASE_KEY,

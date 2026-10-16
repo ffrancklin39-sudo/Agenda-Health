@@ -6,7 +6,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY');
 const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,14 +50,26 @@ Deno.serve(async (req) => {
 
     // Modo 1: texto livre (usado por generateTextContent)
     if (freePrompt) {
+      // Texto livre: só ADMIN/DOCTOR, tamanho limitado (evita uso como proxy aberto de IA)
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      if (!prof || !['ADMIN', 'DOCTOR'].includes(prof.role)) {
+        return new Response(JSON.stringify({ error: 'Sem permissão para este recurso' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (String(freePrompt).length > 8000) {
+        return new Response(JSON.stringify({ error: 'Texto muito longo' }), {
+          status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const geminiRes = await fetch(GEMINI_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY ?? '' },
         body: JSON.stringify({ contents: [{ parts: [{ text: String(freePrompt) }] }] }),
       });
       if (!geminiRes.ok) {
-        const errText = await geminiRes.text();
-        return new Response(JSON.stringify({ error: 'Erro Gemini', detail: errText }), {
+        console.error('[gemini-analyze] Gemini error:', await geminiRes.text());
+        return new Response(JSON.stringify({ error: 'Erro ao chamar o serviço de IA' }), {
           status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -80,7 +92,7 @@ Deno.serve(async (req) => {
 
     const geminiRes = await fetch(GEMINI_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY ?? '' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
@@ -103,7 +115,7 @@ Deno.serve(async (req) => {
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error('[gemini-analyze] Gemini error:', errText);
-      return new Response(JSON.stringify({ error: 'Erro ao chamar Gemini', detail: errText }), {
+      return new Response(JSON.stringify({ error: 'Erro ao chamar o serviço de IA' }), {
         status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -133,7 +145,7 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error('[gemini-analyze] Unexpected error:', err);
-    return new Response(JSON.stringify({ error: 'Erro interno', detail: String(err) }), {
+    return new Response(JSON.stringify({ error: 'Erro interno' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

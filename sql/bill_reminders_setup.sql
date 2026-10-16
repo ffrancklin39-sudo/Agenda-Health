@@ -13,7 +13,7 @@ COMMENT ON COLUMN bills.boleto_url IS 'Link do boleto (PDF ou página de pagamen
 INSERT INTO clinic_settings (key, value)
 VALUES (
   'reminder_contacts',
-  '[{"name":"Fellipe","phone":"5561998356364"},{"name":"Roberto","phone":"5561994300500"}]'
+  '[{"name":"<NOME>","phone":"<5561999999999>"}]'
 )
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
@@ -22,6 +22,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 --   Supabase Dashboard → Database → Extensions → pg_cron → Enable
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
+-- (Na funcao bill-reminders: 'Verify JWT' DESLIGADO — ela confere o x-cron-secret.)
 -- ── 4. Agendar o job diário às 8h (horário de Brasília = 11:00 UTC) ───────────
 -- Remove job anterior se existir
 SELECT cron.unschedule('bill-reminders-daily') WHERE EXISTS (
@@ -33,10 +34,9 @@ SELECT cron.schedule(
   '0 11 * * *',   -- 08:00 BRT (UTC-3)
   $$
   SELECT net.http_post(
-    url    := (SELECT value FROM clinic_settings WHERE key = 'supabase_url')
-              || '/functions/v1/bill-reminders',
+    url    := 'https://<PROJECT_REF>.supabase.co/functions/v1/bill-reminders',
     headers := jsonb_build_object(
-      'Authorization', 'Bearer ' || (SELECT value FROM clinic_settings WHERE key = 'service_role_key'),
+      'x-cron-secret', '<CRON_SECRET>',  -- NUNCA guardar chaves em clinic_settings
       'Content-Type',  'application/json'
     ),
     body   := '{}'::jsonb
@@ -44,9 +44,7 @@ SELECT cron.schedule(
   $$
 );
 
--- ── 5. Alternativa mais simples: guardar a URL + service_role_key nos settings ─
--- (a Edge Function também pode ser chamada manualmente pelo app)
--- Se preferir não usar pg_cron, pode chamar a função via botão na tela Financeiro.
+-- ── 5. A chamada manual pelo app não existe; use o cron acima. NUNCA guarde service_role_key em clinic_settings.
 
 -- ── Verificação ───────────────────────────────────────────────────────────────
 SELECT id, key, value FROM clinic_settings WHERE key = 'reminder_contacts';

@@ -125,8 +125,9 @@ SintesIA/
 | Aba | Status | Observações |
 |-----|--------|-------------|
 | Dashboard | ✅ | KPIs, funil, métricas |
-| Agenda | ✅ | Criação simples, múltiplos procedimentos, recorrência, edição, exclusão, validação de conflito |
-| CRMi | ✅ | Kanban drag-drop, PaymentModal ao confirmar |
+| Agenda | ✅ | Criação simples, múltiplos procedimentos, recorrência, edição, exclusão, validação de bloqueio/expediente (não impede 2 agendamentos no mesmo horário) |
+| CRMi | ✅ | Kanban drag-drop, PaymentModal ao confirmar, selo e filtro de consentimento WhatsApp |
+| WhatsApp / Atendimento | ✅ | Link externo para o Chatwoot (`VITE_CHATWOOT_URL`) |
 | Pacientes | ✅ | Lista, filtros, perfil completo |
 | Tarefas | ✅ | Funcional |
 | Automações | ⏳ | UI apenas |
@@ -250,11 +251,29 @@ SintesIA foi projetado para eventualmente atender múltiplas clínicas como SaaS
 
 ---
 
+## 📵 Consentimento WhatsApp (LGPD) — REGRA OBRIGATÓRIA
+
+Detalhes: `docs/whatsapp-consentimento.md`.
+
+- **Todo envio ativo** (n8n, Chatwoot, Edge Function, qualquer código novo) consulta
+  `public.pode_receber_disparo(patient_id)` imediatamente antes de enviar. Sem exceção.
+- No front, a única regra é `podeReceberDisparo()` / `avaliarContatoManual()` em
+  `src/lib/consentimento.ts`. Não reescrever a regra em outro lugar.
+- `opt_out` sempre vence e vale para o **número** (todos os cadastros com o mesmo telefone).
+- Colunas `opt_in*` / `opt_out*` só mudam pelas funções do banco
+  (`atualizar_consentimento`, `marcar_opt_out`, `reverter_opt_out`,
+  `marcar_opt_in_em_massa`, `registrar_consentimento_entrada`). Escrita direta é recusada.
+- `phone_e164` é coluna gerada: nunca enviar em insert/update.
+- Nunca logar telefone ou nome em texto aberto.
+- `VITE_CHATWOOT_URL` = só o endereço público do painel. Nunca token em variável `VITE_`.
+
+---
+
 ## 💬 Lembretes Automáticos (bill-reminders)
 
 Edge Function `bill-reminders` já deployada:
 - Busca contas vencidas ou vencendo em ≤3 dias
-- Envia WhatsApp para: Fellipe (61 99835-6364) e Roberto (61 99430-0500)
+- Envia WhatsApp para os contatos configurados em `clinic_settings.reminder_contacts` (telefones não ficam no repositório)
 - Contatos configurados em `clinic_settings.reminder_contacts`
 - **Status atual:** aguardando migração WAHA → API oficial Meta
 - Cron automático: `0 11 * * *` (08:00 BRT) via pg_cron — configurar após validar envio
